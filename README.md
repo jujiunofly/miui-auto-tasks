@@ -2,9 +2,7 @@
 一个适用于 社区 4.0 模拟网络功能请求的脚本
 
 ![GitHub](https://img.shields.io/github/license/0-8-4/miui-auto-tasks) 
-![Python](https://img.shields.io/badge/python-3.7+-blue) 
-![DockerHub](https://github.com/0-8-4/miui-auto-tasks/actions/workflows/docker-image.yml/badge.svg)
-[![CodeFactor](https://www.codefactor.io/repository/github/0-8-4/miui-auto-tasks/badge)](https://www.codefactor.io/repository/github/0-8-4/miui-auto-tasks)
+![Python](https://img.shields.io/badge/python-3.11+-blue)
 
 ## **关于项目**:
 
@@ -19,7 +17,7 @@
 > 鉴于项目的特殊性，我们可能在任何时间 **停止更新** 或 **删除项目**
 
 ### **使用说明**：
-项目支持本地、Docker、青龙面板等部署方式，详细使用说明请参见 **[WiKi](https://github.com/0-8-4/miui-auto-tasks/wiki)**
+项目支持本地运行和 Docker Compose 部署，下面给出最小步骤。
 
 ### **Web 面板**：
 启动可视化面板：
@@ -28,7 +26,7 @@
 pip install -r requirements.txt
 cp .env.example .env
 # 修改 .env 中的 WEB_PASSWORD
-python -m uvicorn webapp.main:app --host 0.0.0.0 --port 8000
+python -m waitress --listen=127.0.0.1:8000 webapp.main:app
 ```
 
 访问 `http://127.0.0.1:8000`。面板支持运行任务、实时日志、逐行勾选日志显示、账号任务开关、个人信息/推送设置，以及人工验证码处理。本地运行时验证码会自动打开 Chrome，完成后自动捕获 token；服务器或 Docker 环境通过网页弹窗回填。
@@ -47,12 +45,20 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-默认每天 04:00 执行一次任务，可通过 `SCHEDULE_*` 环境变量调整。Docker 环境没有桌面，出现验证码时面板会弹出处理窗口；在浏览器完成验证后，把地址栏完整 URL 或 `flag` token 粘贴回来即可。定时任务触发验证码时需要在等待时间内到面板处理，否则本次签到会失败。
+不配置定时任务，打开面板后点击“立即运行”即可。Docker 环境没有桌面，出现验证码时面板会弹出处理窗口；在浏览器完成验证后，把地址栏完整 URL 或 `flag` token 粘贴回来即可。
+
+首次构建会下载基础镜像和依赖，可能持续几分钟。`docker compose up -d` 默认不显示构建进度，建议先单独构建：
+
+```shell
+docker compose build --progress=plain
+docker compose up -d
+```
+
+使用 PyPI 官方源。若容器启动后异常，查看 `docker compose logs -f`。
 
 ### **项目介绍**：  
 - [x] 支持 多账号 配置
 - [x] 支持 Docker 部署
-- [x] 支持 青龙面板 部署
 - [x] 支持 自动登录账号刷新社区 Cookie 以便于实现自动化   
 - [x] 绝大多数功能均可在配置文件中自行开关启用   
 
@@ -61,7 +67,6 @@ docker compose up -d --build
 #### **其他**：  
 * 在使用本脚本时请临时关闭网络代理工具及广告拦截程序  
 * 在服务器上使用前建议先使用服务器IP登录 `https://account.xiaomi.com`  
-* 如需定时自动化建议配合 Python3 及 Crontab 使用  
 * **欢迎提供有关的思路，提交BUG以及更多完成社区其他任务方式，我们会认真对待~**
 
 #### **贡献**：
@@ -97,8 +102,3 @@ docker compose up -d --build
 ### 本项目所有贡献者感谢所有Star了本项目的人
 
 [![Star History Chart](https://api.star-history.com/svg?repos=0-8-4/miui-auto-tasks&type=Date)](https://star-history.com/#0-8-4/miui-auto-tasks&Date)
-
-## JetBrains 
-
-特别感谢 [JetBrains](https://www.jetbrains.com/) 为开源项目提供免费的 [PyCharm](https://www.jetbrains.com/pycharm/) 等 IDE 的授权  
-[<img src=".github/md_pic/jetbrains-variant-3.png" width="200"/>](https://www.jetbrains.com/)

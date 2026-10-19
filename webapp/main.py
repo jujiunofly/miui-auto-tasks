@@ -5,21 +5,16 @@ import platform
 import secrets
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 from dotenv import load_dotenv
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 from utils.captcha_broker import enable as enable_captcha_broker
 from utils.captcha_broker import pending as pending_captcha
 from utils.captcha_broker import submit as submit_captcha
 from utils.config import ConfigManager
-from utils.logger import LogCenter, log
+from utils.logger import LogCenter
 
 from .runner import runner
-from .scheduler import start as start_scheduler
 
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR.parent / ".env")
@@ -40,6 +35,8 @@ def _use_web_captcha_broker() -> bool:
 
 
 CAPTCHA_BROKER_ENABLED = _use_web_captcha_broker()
+if CAPTCHA_BROKER_ENABLED:
+    enable_captcha_broker()
 
 TASK_FIELDS = [
     "CheckIn",
@@ -65,40 +62,35 @@ TASK_LABELS = {
     "WxSign": "微信小程序签到",
 }
 
-security = HTTPBasic(auto_error=False)
+app = Flask(
+    __name__,
+    static_folder=str(BASE_DIR / "static"),
+    static_url_path="/static",
+)
 
 
-def require_auth(credentials: HTTPBasicCredentials | None = Depends(security)):
-    """可选的 HTTP Basic 认证"""
+@app.before_request
+def auth_guard():
+    """保护面板和 API，静态资源除外。"""
+    if request.path == "/health" or request.path.startswith("/static/"):
+        return None
     password = os.getenv("WEB_PASSWORD", "")
     if not password:
-        raise HTTPException(
-            status_code=503,
-            detail="未设置 WEB_PASSWORD，请在 .env 中配置登录密码",
-        )
+        return jsonify({"detail": "未设置 WEB_PASSWORD，请在 .env 中配置登录密码"}), 503
     username = os.getenv("WEB_USERNAME", "admin")
+    auth = request.authorization
     valid = (
-        credentials is not None
-        and secrets.compare_digest(credentials.username, username)
-        and secrets.compare_digest(credentials.password, password)
+        auth is not None
+        and secrets.compare_digest(auth.username or "", username)
+        and secrets.compare_digest(auth.password or "", password)
     )
     if not valid:
-        raise HTTPException(
-            status_code=401,
-            detail="需要登录",
-            headers={"WWW-Authenticate": "Basic"},
+        return Response(
+            "需要登录",
+            status=401,
+            headers={"WWW-Authenticate": 'Basic realm="MIUI Auto Tasks"'},
         )
-
-
-app = FastAPI(title="MIUI Auto Tasks", docs_url=None, redoc_url=None)
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-
-
-@app.on_event("startup")
-def startup():
-    if CAPTCHA_BROKER_ENABLED:
-        enable_captcha_broker()
-    start_scheduler()
+    return None
 
 
 def _mask_uid(uid: str) -> str:
@@ -142,39 +134,6 @@ def _telegram_payload():
     }
 
 
-class AccountUpdate(BaseModel):
-    tasks: dict[str, bool]
-
-
-class CaptchaSubmit(BaseModel):
-    id: str
-    value: str
-
-
-class AccountSettings(BaseModel):
-    index: int
-    uid: str | None = None
-    password: str | None = None
-    cookies: str | None = None
-    user_agent: str | None = None
-    login_user_agent: str | None = None
-    device: str | None = None
-    device_model: str | None = None
-
-
-class PushSettings(BaseModel):
-    notifier: str | None = None
-    title: str | None = None
-    token: str | None = None
-    userid: str | None = None
-    markdown: bool | None = None
-
-
-class SettingsUpdate(BaseModel):
-    accounts: list[AccountSettings] | None = None
-    onepush: PushSettings | None = None
-
-
 def _settings_payload():
     accounts = []
     for index, account in enumerate(_conf.accounts):
@@ -207,16 +166,17 @@ def _settings_payload():
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return jsonify({"ok": True})
 
 
-@app.get("/", dependencies=[Depends(require_auth)])
+@app.get("/")
 def index():
-    return FileResponse(BASE_DIR / "static" / "index.html")
+    return send_from_directory(BASE_DIR / "static", "index.html")
 
 
-@app.get("/api/state", dependencies=[Depends(require_auth)])
-def state(after: int = 0):
+@app.get("/api/state")
+def state():
+    after = request.args.get("after", default=0, type=int) or 0
     payload = runner.status()
     payload.update(
         {
@@ -227,84 +187,106 @@ def state(after: int = 0):
             "captcha_mode": "web" if CAPTCHA_BROKER_ENABLED else "browser",
         }
     )
-    return payload
+    return jsonify(payload)
 
 
-@app.post("/api/run", dependencies=[Depends(require_auth)])
+@app.post("/api/run")
 def run():
     if not runner.start(auto_notify=True):
-        raise HTTPException(status_code=409, detail="已有任务正在运行")
-    return {"ok": True}
+        return jsonify({"detail": "已有任务正在运行"}), 409
+    return jsonify({"ok": True})
 
 
-@app.patch("/api/accounts/{index}", dependencies=[Depends(require_auth)])
-def update_account(index: int, request: AccountUpdate):
+@app.patch("/api/accounts/<int:index>")
+def update_account(index: int):
     if runner.status()["running"]:
-        raise HTTPException(status_code=409, detail="任务运行中，暂时不能修改配置")
+        return jsonify({"detail": "任务运行中，暂时不能修改配置"}), 409
     if index < 0 or index >= len(_conf.accounts):
-        raise HTTPException(status_code=404, detail="账号不存在")
+        return jsonify({"detail": "账号不存在"}), 404
+    data = request.get_json(silent=True) or {}
+    tasks = data.get("tasks")
+    if not isinstance(tasks, dict):
+        return jsonify({"detail": "tasks 必须是对象"}), 400
     account = _conf.accounts[index]
-    for key, value in request.tasks.items():
+    for key, value in tasks.items():
         if key not in TASK_FIELDS:
-            raise HTTPException(status_code=400, detail=f"未知任务: {key}")
+            return jsonify({"detail": f"未知任务: {key}"}), 400
         setattr(account, key, bool(value))
     if not ConfigManager.write_plugin_data():
-        raise HTTPException(status_code=500, detail="配置保存失败")
-    return {"accounts": _accounts_payload()}
+        return jsonify({"detail": "配置保存失败"}), 500
+    return jsonify({"accounts": _accounts_payload()})
 
 
-@app.post("/api/captcha/submit", dependencies=[Depends(require_auth)])
-def captcha_submit(request: CaptchaSubmit):
-    if not submit_captcha(request.id, request.value):
-        raise HTTPException(status_code=400, detail="验证码已超时或提交失败")
-    return {"ok": True}
+@app.post("/api/captcha/submit")
+def captcha_submit():
+    data = request.get_json(silent=True) or {}
+    request_id = str(data.get("id") or "")
+    value = str(data.get("value") or "")
+    if not request_id or not value:
+        return jsonify({"detail": "验证码参数不完整"}), 400
+    if not submit_captcha(request_id, value):
+        return jsonify({"detail": "验证码已超时或提交失败"}), 400
+    return jsonify({"ok": True})
 
 
-@app.get("/api/settings", dependencies=[Depends(require_auth)])
+@app.get("/api/settings")
 def get_settings():
-    return _settings_payload()
+    return jsonify(_settings_payload())
 
 
-@app.patch("/api/settings", dependencies=[Depends(require_auth)])
-def update_settings(request: SettingsUpdate):
+@app.patch("/api/settings")
+def update_settings():
     if runner.status()["running"]:
-        raise HTTPException(status_code=409, detail="任务运行中，暂时不能修改设置")
-    for item in request.accounts or []:
-        if item.index < 0 or item.index >= len(_conf.accounts):
-            raise HTTPException(status_code=404, detail="账号不存在")
-        account = _conf.accounts[item.index]
-        if item.uid is not None and item.uid.strip():
-            account.uid = item.uid.strip()
-        if item.password:
-            account.password = account._password(item.password)
-        if item.cookies and item.cookies.strip():
-            try:
-                account.cookies = account._cookies(item.cookies.strip())
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                raise HTTPException(status_code=400, detail=f"Cookie 格式错误: {exc}") from exc
-        if item.user_agent is not None:
-            account.user_agent = item.user_agent.strip()
-        if item.login_user_agent is not None:
-            account.login_user_agent = item.login_user_agent.strip()
-        if item.device is not None:
-            account.device = item.device.strip()
-        if item.device_model is not None:
-            account.device_model = item.device_model.strip()
+        return jsonify({"detail": "任务运行中，暂时不能修改设置"}), 409
+    data = request.get_json(silent=True) or {}
+    accounts = data.get("accounts") or []
+    onepush = data.get("onepush") or {}
+    if not isinstance(accounts, list) or not isinstance(onepush, dict):
+        return jsonify({"detail": "设置格式错误"}), 400
 
-    if request.onepush:
+    for item in accounts:
+        if not isinstance(item, dict):
+            return jsonify({"detail": "账号设置格式错误"}), 400
+        index = item.get("index")
+        if not isinstance(index, int) or index < 0 or index >= len(_conf.accounts):
+            return jsonify({"detail": "账号不存在"}), 404
+        account = _conf.accounts[index]
+        if item.get("uid") is not None and str(item["uid"]).strip():
+            account.uid = str(item["uid"]).strip()
+        if item.get("password"):
+            account.password = account._password(str(item["password"]))
+        if item.get("cookies") and str(item["cookies"]).strip():
+            try:
+                account.cookies = account._cookies(str(item["cookies"]).strip())
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                return jsonify({"detail": f"Cookie 格式错误: {exc}"}), 400
+        if item.get("user_agent") is not None:
+            account.user_agent = str(item["user_agent"]).strip()
+        if item.get("login_user_agent") is not None:
+            account.login_user_agent = str(item["login_user_agent"]).strip()
+        if item.get("device") is not None:
+            account.device = str(item["device"]).strip()
+        if item.get("device_model") is not None:
+            account.device_model = str(item["device_model"]).strip()
+
+    if onepush:
         params = _conf.ONEPUSH.params or {}
-        if request.onepush.notifier is not None:
-            _conf.ONEPUSH.notifier = request.onepush.notifier.strip()
-        if request.onepush.title is not None:
-            params["title"] = request.onepush.title
-        if request.onepush.userid is not None:
-            params["userid"] = request.onepush.userid
-        if request.onepush.markdown is not None:
-            params["markdown"] = request.onepush.markdown
-        if request.onepush.token:
-            params["token"] = request.onepush.token.strip()
+        if onepush.get("notifier") is not None:
+            _conf.ONEPUSH.notifier = str(onepush["notifier"]).strip()
+        if onepush.get("title") is not None:
+            params["title"] = str(onepush["title"])
+        if onepush.get("userid") is not None:
+            params["userid"] = str(onepush["userid"])
+        if onepush.get("markdown") is not None:
+            params["markdown"] = bool(onepush["markdown"])
+        if onepush.get("token"):
+            params["token"] = str(onepush["token"]).strip()
         _conf.ONEPUSH.params = params
 
     if not ConfigManager.write_plugin_data():
-        raise HTTPException(status_code=500, detail="设置保存失败")
-    return _settings_payload()
+        return jsonify({"detail": "设置保存失败"}), 500
+    return jsonify(_settings_payload())
+
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8000)

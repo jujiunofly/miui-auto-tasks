@@ -6,6 +6,7 @@ LastEditors: Night-stars-1 nujj1042633805@gmail.com
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from tenacity import Retrying, stop_after_attempt
 
@@ -19,13 +20,14 @@ from utils.system_info import print_info
 from utils.utils import get_token
 
 _conf = ConfigManager.data_obj
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def main(auto_notify: bool = True):
     """启动签到"""
     LogCenter.clear()
     print_info()
-    report = RunReport(started_at=datetime.now())
+    report = RunReport(started_at=datetime.now(LOCAL_TZ))
     for account in _conf.accounts:
         account_report = AccountReport(uid=str(account.uid))
         report.accounts.append(account_report)
@@ -89,7 +91,7 @@ def main(auto_notify: bool = True):
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.exception("账号任务异常")
             account_report.error = str(e)
-    report.finished_at = datetime.now()
+    report.finished_at = datetime.now(LOCAL_TZ)
     executed_count = sum(len(item.executed) for item in report.accounts)
     completed_count = sum(len(item.completed) for item in report.accounts)
     log.info(f"本次执行 {executed_count} 个未完成任务，{completed_count} 个任务已完成")

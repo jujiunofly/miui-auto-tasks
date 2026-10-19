@@ -2,9 +2,12 @@
 
 import threading
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from miuitask import main
 from utils.logger import LogCenter, log
+
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class Runner:
@@ -27,7 +30,7 @@ class Runner:
             self._last_run = {
                 "id": run_id,
                 "status": "running",
-                "started": datetime.now().isoformat(timespec="seconds"),
+                "started": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
                 "finished": "",
                 "auto_notify": auto_notify,
             }
@@ -53,7 +56,7 @@ class Runner:
                     self._last_run.update(
                         {
                             "status": status,
-                            "finished": datetime.now().isoformat(timespec="seconds"),
+                            "finished": datetime.now(LOCAL_TZ).isoformat(timespec="seconds"),
                             "error": error,
                         }
                     )

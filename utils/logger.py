@@ -8,8 +8,17 @@ import sys
 import threading
 from collections import deque
 from itertools import count
+from zoneinfo import ZoneInfo
 
 from loguru import logger
+
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def localize(record: dict) -> bool:
+    """统一日志时间到上海时区"""
+    record["time"] = record["time"].astimezone(LOCAL_TZ)
+    return True
 
 
 class LogCenter:
@@ -64,12 +73,12 @@ log.add(sys.stdout, level="INFO", colorize=True,
                "<level>{level: <5}</level> | "
                "<cyan>{module}</cyan>.<cyan>{function}</cyan>"
                ":<cyan>{line}</cyan> - "
-               "<level>{message}</level>")
+               "<level>{message}</level>", filter=localize)
 
 log.add(path_log, level="DEBUG",
         format="{time:HH:mm:ss} - "
                "{level: <5} | "
                "{module}.{function}:{line} - {message}",
-        rotation="1 days", enqueue=True, serialize=False, encoding="utf-8", retention="10 days")
+        rotation="1 days", enqueue=True, serialize=False, encoding="utf-8", retention="10 days", filter=localize)
 
-log.add(lambda message: LogCenter.add(message.record), level="INFO")
+log.add(lambda message: LogCenter.add(message.record), level="INFO", filter=localize)

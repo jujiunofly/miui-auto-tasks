@@ -1,21 +1,15 @@
-FROM python:alpine
+FROM python:3.11-slim
 
-RUN apk add --no-cache gcc g++ musl-dev python3-dev libffi-dev rust openssl-dev cargo pkgconfig
-
-RUN pip install --no-cache-dir pdm
+ENV PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai
 
 WORKDIR /srv
 
-COPY ./utils ./utils
+COPY . .
 
-RUN echo "VERSION='$(git describe --tags --abbrev=0)'" > ./utils/__version__.py
+RUN pip install --no-cache-dir -r requirements.txt && \
+    mkdir -p /srv/data /srv/logs
 
-COPY ./pyproject.toml ./pdm.lock ./miuitask.py ./docker_start.sh ./
+EXPOSE 8000
 
-RUN pdm install --prod && \
-    echo '0 4 * * * /bin/sh -c "sleep $((RANDOM % 1800 + 1)); cd /srv && pdm run /srv/miuitask.py"' > /var/spool/cron/crontabs/root && \
-    chmod +x docker_start.sh
-
-VOLUME ["/srv/data", "/srv/logs"]
-
-CMD ["/srv/docker_start.sh"]
+CMD ["python", "-m", "waitress", "--listen=0.0.0.0:8000", "webapp.main:app"]
