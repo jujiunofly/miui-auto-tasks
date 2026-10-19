@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
 from utils.captcha_broker import enable as enable_captcha_broker
 from utils.captcha_broker import pending as pending_captcha
@@ -21,6 +22,7 @@ from .runner import runner
 from .scheduler import start as start_scheduler
 
 BASE_DIR = Path(__file__).parent
+load_dotenv(BASE_DIR.parent / ".env")
 _conf = ConfigManager.data_obj
 
 
@@ -70,7 +72,10 @@ def require_auth(credentials: HTTPBasicCredentials | None = Depends(security)):
     """可选的 HTTP Basic 认证"""
     password = os.getenv("WEB_PASSWORD", "")
     if not password:
-        return
+        raise HTTPException(
+            status_code=503,
+            detail="未设置 WEB_PASSWORD，请在 .env 中配置登录密码",
+        )
     username = os.getenv("WEB_USERNAME", "admin")
     valid = (
         credentials is not None

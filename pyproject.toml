@@ -16,7 +16,8 @@ dependencies = [
     "jsonpath_ng>=1.7.0",
     "pillow>=11.2.1",
     "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.30.0"
+    "uvicorn[standard]>=0.30.0",
+    "python-dotenv>=1.0.0"
 ]
 requires-python = ">=3.11"
 license = {text = "MIT"}

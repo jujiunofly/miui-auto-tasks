@@ -26,6 +26,8 @@
 
 ```shell
 pip install -r requirements.txt
+cp .env.example .env
+# 修改 .env 中的 WEB_PASSWORD
 python -m uvicorn webapp.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -33,7 +35,7 @@ python -m uvicorn webapp.main:app --host 0.0.0.0 --port 8000
 
 Telegram 每次运行结束只发送账号状态与加分汇总，不再发送完整脚本日志。
 
-本地面板默认不启用登录；对外部署时请设置 `WEB_PASSWORD`，Docker Compose 已默认开启 HTTP Basic 认证。
+面板必须设置 `WEB_PASSWORD` 才能访问；本地启动会自动加载项目根目录的 `.env`，浏览器会弹出 HTTP Basic 登录框。
 
 本机自动捕获验证码需要 `playwright` 和 Chrome；如果浏览器无法启动，可设置 `CAPTCHA_BROKER=1` 改用网页回填。
 

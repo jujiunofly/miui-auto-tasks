@@ -10,7 +10,7 @@ services:
     environment:
       TZ: Asia/Shanghai
       WEB_USERNAME: ${WEB_USERNAME:-admin}
-      WEB_PASSWORD: ${WEB_PASSWORD:-change-me}
+      WEB_PASSWORD: ${WEB_PASSWORD:?WEB_PASSWORD is required}
       SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
       SCHEDULE_HOUR: ${SCHEDULE_HOUR:-4}
       SCHEDULE_MINUTE: ${SCHEDULE_MINUTE:-0}

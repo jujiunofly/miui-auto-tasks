@@ -7,6 +7,7 @@ logs
 .venv
 env
 venv
+.env
 .pdm-python
 *.log
 webapp_preview*.png
