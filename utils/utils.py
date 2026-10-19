@@ -120,6 +120,8 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
         if not gt or not challenge:
             return get_token_by_recaptcha(url)
         geetest_data = get_validate(gt, challenge)
+        if not geetest_data.validate or not geetest_data.challenge:
+            return get_token_by_recaptcha(url)
         params = {
             "k": "3dc42a135a8d45118034d1ab68213073",
             "locale": "zh_CN",

@@ -4,9 +4,7 @@ const state = {
   runId: null,
   after: 0,
   entries: new Map(),
-  show: new Set(),
   level: "ALL",
-  onlyShow: false,
   autoScroll: true,
   running: false,
   lastRun: {},
@@ -372,21 +370,10 @@ function renderLogs() {
 
   entries.forEach((entry) => {
     if (state.level !== "ALL" && entry.level !== state.level) return;
-    if (state.onlyShow && !state.show.has(entry.id)) return;
     visible += 1;
 
     const row = document.createElement("div");
     row.className = `log-row level-${String(entry.level || "INFO").toUpperCase()}`;
-
-    const showBox = document.createElement("input");
-    showBox.type = "checkbox";
-    showBox.checked = state.show.has(entry.id);
-    showBox.title = "在脚本日志中显示";
-    showBox.addEventListener("change", () => {
-      if (showBox.checked) state.show.add(entry.id);
-      else state.show.delete(entry.id);
-      if (state.onlyShow) renderLogs();
-    });
 
     const time = document.createElement("span");
     time.className = "log-time";
@@ -404,7 +391,7 @@ function renderLogs() {
     message.textContent = entry.message;
     message.title = `${entry.module}.${entry.function}:${entry.line}`;
 
-    row.append(showBox, time, levelCell, message);
+    row.append(time, levelCell, message);
     fragment.appendChild(row);
   });
 
@@ -420,19 +407,8 @@ function addLogs(logs) {
   logs.forEach((entry) => {
     if (state.entries.has(entry.id)) return;
     state.entries.set(entry.id, entry);
-    state.show.add(entry.id);
     state.after = Math.max(state.after, entry.id);
   });
-  renderLogs();
-}
-
-function setAll(value) {
-  const target = state.show;
-  if (value) {
-    state.entries.forEach((entry) => target.add(entry.id));
-  } else {
-    target.clear();
-  }
   renderLogs();
 }
 
@@ -495,7 +471,6 @@ async function runTask() {
   try {
     await api("/api/run", { method: "POST" });
     state.entries.clear();
-    state.show.clear();
     state.after = 0;
     state.runId = null;
     state.captchaSubmittedId = "";
@@ -515,7 +490,6 @@ async function poll() {
     } else if (state.runId !== data.run_id) {
       state.runId = data.run_id;
       state.entries.clear();
-      state.show.clear();
       state.after = 0;
       state.captchaSubmittedId = "";
     }
@@ -543,15 +517,9 @@ $("levelFilter").addEventListener("change", (event) => {
   state.level = event.target.value;
   renderLogs();
 });
-$("onlyShowSelected").addEventListener("change", (event) => {
-  state.onlyShow = event.target.checked;
-  renderLogs();
-});
 $("autoScroll").addEventListener("change", (event) => {
   state.autoScroll = event.target.checked;
 });
-$("showAll").addEventListener("click", () => setAll(true));
-$("showNone").addEventListener("click", () => setAll(false));
 $("captchaBtn").addEventListener("click", openCaptchaModal);
 $("captchaClose").addEventListener("click", closeCaptchaModal);
 $("captchaLater").addEventListener("click", closeCaptchaModal);

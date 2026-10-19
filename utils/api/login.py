@@ -8,6 +8,7 @@ import json
 import time
 from os import getenv
 from typing import Dict, Optional, Tuple, Union
+from urllib.parse import parse_qsl, urlparse
 
 from ..config import Account, ConfigManager
 from ..data_model import LoginResultHandler
@@ -103,13 +104,96 @@ class Login:
                 ConfigManager.write_plugin_data()
                 return cookies
             elif api_data.need_captcha:
-                log.error("当前账号需要短信验证码, 请尝试修改UA或设备ID")
+                notification_url = api_data.content.get("notificationUrl", "")
+                log.warning("当前账号需要短信/邮箱验证，已打开验证页面")
+                if cookies := self.verify_login(notification_url):
+                    return cookies
+                log.error("短信/邮箱验证未完成")
             else:
                 log.error(f"小米账号登录失败：{api_data.message}")
             return False
         except Exception:  # pylint: disable=broad-exception-caught
             log.exception("登录小米账号出错")
             return False
+
+    def verify_login(self, url: str, headless: bool = False):
+        """打开小米安全验证页，等待用户完成短信/邮箱验证并保存 Cookie"""
+        if not url:
+            log.error("登录验证链接为空")
+            return False
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            log.error("未安装 playwright，无法打开登录验证页面")
+            return False
+
+        browser = None
+        try:
+            with sync_playwright() as playwright:
+                try:
+                    browser = playwright.chromium.launch(
+                        channel="chrome",
+                        headless=headless,
+                        args=["--disable-blink-features=AutomationControlled"],
+                    )
+                except Exception:
+                    browser = playwright.chromium.launch(
+                        headless=headless,
+                        args=["--disable-blink-features=AutomationControlled"],
+                    )
+                context = browser.new_context(locale="zh-CN")
+                page = context.new_page()
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                page.bring_to_front()
+                log.info("请在浏览器中发送并输入短信/邮箱验证码，完成后会自动继续")
+
+                deadline = time.time() + 300
+                while time.time() < deadline:
+                    cookie_values = {
+                        cookie["name"]: cookie["value"]
+                        for cookie in context.cookies()
+                    }
+                    pass_token = cookie_values.get("passToken", "")
+                    user_id = (
+                        cookie_values.get("userId")
+                        or cookie_values.get("cUserId")
+                        or str(self.uid)
+                    )
+                    if not pass_token:
+                        try:
+                            params = dict(parse_qsl(urlparse(page.url).query))
+                            pass_token = params.get("passToken", "")
+                            user_id = params.get("userId", user_id)
+                        except Exception:
+                            pass
+                    if pass_token:
+                        self.account.cookies["passToken"] = pass_token
+                        cookies = self.get_cookies_by_passtk(user_id, pass_token)
+                        if cookies:
+                            self.account.uid = user_id
+                            self.account.cookies.update(cookies)
+                            ConfigManager.write_plugin_data()
+                            log.success("登录验证完成")
+                            return cookies
+                        log.error("登录验证完成，但获取社区 Cookie 失败")
+                        return False
+                    try:
+                        page.wait_for_timeout(500)
+                    except Exception:
+                        if context.cookies():
+                            continue
+                        break
+                log.error("登录验证超时或浏览器已关闭")
+                return False
+        except Exception:  # pylint: disable=broad-exception-caught
+            log.exception("登录验证流程异常")
+            return False
+        finally:
+            if browser:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
 
     def get_cookies(self, url: str) -> Union[Dict[str, str], bool]:
         """获取社区 Cookie"""

@@ -248,7 +248,7 @@ select {
 
 .log-table-head, .log-row {
   display: grid;
-  grid-template-columns: 52px 78px 86px minmax(0, 1fr);
+  grid-template-columns: 78px 86px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
 }
@@ -430,11 +430,11 @@ textarea:focus { border-color: rgba(255, 106, 61, 0.55); }
   .card-head, .log-head { flex-direction: column; align-items: stretch; }
   .log-table-head { display: none; }
   .log-row {
-    grid-template-columns: 38px 66px minmax(0, 1fr);
+    grid-template-columns: 66px minmax(0, 1fr);
     padding: 10px 14px;
   }
   .log-row .log-message { grid-column: 1 / -1; padding-left: 0; }
-  .log-row .log-level-cell { grid-column: 3; grid-row: 1; justify-self: end; }
+  .log-row .log-level-cell { grid-column: 2; grid-row: 1; justify-self: end; }
   .log-toolbar { padding: 12px 14px; }
   .log-list { max-height: 520px; }
   .settings-grid { grid-template-columns: 1fr; }

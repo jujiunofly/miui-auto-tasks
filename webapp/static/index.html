@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MIUI Auto Tasks</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
   <div class="app-shell">
@@ -66,7 +66,7 @@
         <div class="card-head log-head">
           <div>
             <h2>脚本日志</h2>
-            <p class="muted">勾选配合“只看显示勾选”控制显示；Telegram 每次自动发送账号汇总</p>
+            <p class="muted">日志只在本页显示；Telegram 每次自动发送账号汇总</p>
           </div>
           <div class="log-actions">
             <label class="checkline"><input id="autoScroll" type="checkbox" checked> 自动滚动</label>
@@ -81,15 +81,9 @@
             <option value="WARNING">WARNING</option>
             <option value="ERROR">ERROR</option>
           </select>
-          <label class="checkline"><input id="onlyShowSelected" type="checkbox"> 只看显示勾选</label>
-          <div class="toolbar-group">
-            <button id="showAll" class="btn ghost small" type="button">全选显示</button>
-            <button id="showNone" class="btn ghost small" type="button">清空显示</button>
-          </div>
         </div>
 
         <div class="log-table-head">
-          <span>显示</span>
           <span>时间</span>
           <span>级别</span>
           <span>内容</span>
@@ -138,6 +132,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
