@@ -21,6 +21,32 @@
 ### **使用说明**：
 项目支持本地、Docker、青龙面板等部署方式，详细使用说明请参见 **[WiKi](https://github.com/0-8-4/miui-auto-tasks/wiki)**
 
+### **Web 面板**：
+启动可视化面板：
+
+```shell
+pip install -r requirements.txt
+python -m uvicorn webapp.main:app --host 0.0.0.0 --port 8000
+```
+
+访问 `http://127.0.0.1:8000`。面板支持运行任务、实时日志、逐行勾选日志显示、账号任务开关、个人信息/推送设置，以及人工验证码处理。本地运行时验证码会自动打开 Chrome，完成后自动捕获 token；服务器或 Docker 环境通过网页弹窗回填。
+
+Telegram 每次运行结束只发送账号状态与加分汇总，不再发送完整脚本日志。
+
+本地面板默认不启用登录；对外部署时请设置 `WEB_PASSWORD`，Docker Compose 已默认开启 HTTP Basic 认证。
+
+本机自动捕获验证码需要 `playwright` 和 Chrome；如果浏览器无法启动，可设置 `CAPTCHA_BROKER=1` 改用网页回填。
+
+Docker Compose 部署：
+
+```shell
+cp .env.example .env
+# 修改 .env 中的 WEB_PASSWORD
+docker compose up -d --build
+```
+
+默认每天 04:00 执行一次任务，可通过 `SCHEDULE_*` 环境变量调整。Docker 环境没有桌面，出现验证码时面板会弹出处理窗口；在浏览器完成验证后，把地址栏完整 URL 或 `flag` token 粘贴回来即可。定时任务触发验证码时需要在等待时间内到面板处理，否则本次签到会失败。
+
 ### **项目介绍**：  
 - [x] 支持 多账号 配置
 - [x] 支持 Docker 部署

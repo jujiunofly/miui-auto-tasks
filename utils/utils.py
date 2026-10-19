@@ -14,7 +14,8 @@ from Crypto.Util.Padding import pad
 from qrcode import QRCode, constants
 from tenacity import RetryError, Retrying, stop_after_attempt
 
-from .captcha import get_validate
+from .captcha import get_validate, solve_recaptcha_manual
+from .captcha_broker import request_token
 from .data_model import TokenResultHandler
 from .logger import log
 from .request import post
@@ -90,6 +91,25 @@ def is_incorrect_return(
     )
 
 
+def get_token_by_recaptcha(url: str) -> Union[str, bool]:
+    """通过人工完成 reCAPTCHA 获取 TOKEN"""
+    try:
+        broker_token = request_token(url, timeout=180)
+        if broker_token is not None:
+            if broker_token:
+                return broker_token
+            log.error("网页人工验证超时，无法获取TOKEN")
+            return False
+        token = solve_recaptcha_manual(url)
+        if token:
+            return token
+        log.error("人机验证失败，无法获取TOKEN")
+        return False
+    except Exception:  # pylint: disable=broad-exception-caught
+        log.exception("reCAPTCHA 获取 TOKEN 异常")
+        return False
+
+
 def get_token_by_captcha(url: str) -> Union[str, bool]:
     """通过人机验证码获取TOKEN"""
     try:
@@ -97,6 +117,8 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
         query_params = dict(parse_qsl(parsed_url.query))  # 解析URL参数
         gt = query_params.get("c", "")
         challenge = query_params.get("l", "")
+        if not gt or not challenge:
+            return get_token_by_recaptcha(url)
         geetest_data = get_validate(gt, challenge)
         params = {
             "k": "3dc42a135a8d45118034d1ab68213073",
@@ -230,8 +252,7 @@ def get_token(uid: str) -> str | bool:
                     url = api_data.data.get("url", "")
                     if token := get_token_by_captcha(url):
                         return token
-                    else:
-                        raise ValueError("人机验证失败")
+                    return False
                 else:
                     log.error("遇到未知错误，无法获取TOKEN")
                     return False

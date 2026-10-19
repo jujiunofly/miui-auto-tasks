@@ -48,6 +48,9 @@ class BaseSign:
     def __init__(self, account: Account, token: Optional[str] = None):
         self.cookies = account.cookies
         self.token = token
+        self.last_success = False
+        self.last_message = ""
+        self.last_growth = None
         self.user_agent = account.user_agent
         self.headers = {
             "Host": "api-alpha.vip.miui.com",
@@ -161,6 +164,7 @@ class BaseSign:
                                 data["token"] = self.token
                             else:
                                 log.info(f"未获取到token, 跳过{self.NAME}")
+                                self.last_message = "未获取到token"
                                 return False, "None"
                         boundary = f'----WebKitFormBoundaryZ{get_random_chars_as_string(16, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")}'
                         data = MultipartEncoder(fields=data, boundary=boundary)
@@ -174,6 +178,7 @@ class BaseSign:
                                 data["token"] = self.token
                             else:
                                 log.info(f"未获取到token, 跳过{self.NAME}")
+                                self.last_message = "未获取到token"
                                 return False, "None"
                     response = post(
                         self.URL_SIGN,
@@ -186,18 +191,24 @@ class BaseSign:
                     result = response.json()
                     api_data = SignResultHandler(result)
                     if api_data:
+                        self.last_success = True
+                        self.last_growth = api_data.growth
+                        self.last_message = api_data.message or "成功"
                         if api_data.growth:
                             log.success(f"{self.NAME}结果: 成长值+{api_data.growth}")
                         else:
                             log.success(f"{self.NAME}结果: {api_data.message}")
                         return True, "None"
                     elif api_data.ck_invalid:
+                        self.last_message = "Cookie无效"
                         log.error(f"{self.NAME}失败: Cookie无效")
                         return False, "cookie"
                     else:
+                        self.last_message = api_data.message or "失败"
                         log.error(f"{self.NAME}失败：{api_data.message}")
                         return False, "None"
         except RetryError as error:
+            self.last_message = "请求失败"
             if is_incorrect_return(error):
                 log.exception(f"{self.NAME} - 服务器没有正确返回 {response.text}")
             else:

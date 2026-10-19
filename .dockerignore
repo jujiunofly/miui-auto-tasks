@@ -1,0 +1,12 @@
+.git
+.github
+__pycache__
+*.py[cod]
+data
+logs
+.venv
+env
+venv
+.pdm-python
+*.log
+webapp_preview*.png

@@ -1,0 +1,21 @@
+services:
+  miui-auto-tasks:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: miui-auto-tasks
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: Asia/Shanghai
+      WEB_USERNAME: ${WEB_USERNAME:-admin}
+      WEB_PASSWORD: ${WEB_PASSWORD:-change-me}
+      SCHEDULE_ENABLED: ${SCHEDULE_ENABLED:-true}
+      SCHEDULE_HOUR: ${SCHEDULE_HOUR:-4}
+      SCHEDULE_MINUTE: ${SCHEDULE_MINUTE:-0}
+      SCHEDULE_JITTER_MINUTES: ${SCHEDULE_JITTER_MINUTES:-30}
+      CAPTCHA_BROKER: "1"
+    volumes:
+      - ./data:/srv/data
+      - ./logs:/srv/logs

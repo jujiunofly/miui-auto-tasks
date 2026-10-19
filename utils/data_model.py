@@ -148,9 +148,16 @@ class UserInfoResult:
         :param kwargs: 用户信息字典，包含了 'userInfo' 和 'userGrowLevelInfo'
         """
         if isinstance(kwargs, dict) and kwargs:
-            kwargs = kwargs.get("userInfo", {}).get("userGrowLevelInfo", {})
-            self.title = kwargs.get("title", "未知")
-            self.point = kwargs.get("point", 0)
+            user_info = kwargs.get("userInfo") or {}
+            self.nickname = (
+                user_info.get("userName") or user_info.get("miNikeName") or ""
+            )
+            level_info = user_info.get("userGrowLevelInfo") or {}
+            title = level_info.get("title", "未知")
+            show_level = level_info.get("showLevel", "")
+            self.title = f"{show_level} {title}".strip() if show_level else title
+            self.point = level_info.get("point", 0)
         else:
+            self.nickname = ""
             self.title = "未知"
             self.point = 0
