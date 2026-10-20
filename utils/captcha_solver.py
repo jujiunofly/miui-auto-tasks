@@ -13,11 +13,13 @@ _PROVIDERS = {
         "create": "https://api.2captcha.com/createTask",
         "result": "https://api.2captcha.com/getTaskResult",
         "geetest_type": "GeeTestTaskProxyless",
+        "recaptcha_type": "RecaptchaV2EnterpriseTaskProxyless",
     },
     "capsolver": {
         "create": "https://api.capsolver.com/createTask",
         "result": "https://api.capsolver.com/getTaskResult",
         "geetest_type": "GeeTestTaskProxyLess",
+        "recaptcha_type": "ReCaptchaV2EnterpriseTaskProxyLess",
     },
 }
 
@@ -157,3 +159,37 @@ def solve_geetest(
         "validate": str(validate),
         "seccode": str(seccode),
     }
+
+
+def solve_recaptcha(
+    page_url: str,
+    site_key: str,
+    is_invisible: bool = False,
+) -> Optional[str]:
+    """调用付费服务完成 reCAPTCHA Enterprise，返回 Google token。"""
+    if not is_configured():
+        return None
+    config = _PROVIDERS[provider()]
+    task = {
+        "type": config["recaptcha_type"],
+        "websiteURL": page_url,
+        "websiteKey": site_key,
+        "isInvisible": bool(is_invisible),
+    }
+    log.info(f"使用 {provider()} 自动完成 Google 验证码")
+    task_id = _create_task(task)
+    if not task_id:
+        return None
+    solution = _wait_result(task_id)
+    if not solution:
+        return None
+    token = (
+        solution.get("gRecaptchaResponse")
+        or solution.get("token")
+        or solution.get("recaptchaResponse")
+        or ""
+    )
+    if not token:
+        log.error("打码服务没有返回 reCAPTCHA token")
+        return None
+    return str(token)

@@ -88,7 +88,7 @@ CAPTCHA_API_KEY=你的API_KEY
 docker compose up -d --force-recreate
 ```
 
-面板设置里显示“验证码方式：自动打码 (2captcha/capsolver)”即生效。自动打码失败时会自动回退到网页助手/手动提交。
+面板设置里显示“验证码方式：自动打码 (2captcha/capsolver)”即生效。自动打码覆盖极验和 Google reCAPTCHA；失败时会自动回退到网页助手/手机脚本/手动提交。
 
 常用服务：
 - 2Captcha：https://2captcha.com

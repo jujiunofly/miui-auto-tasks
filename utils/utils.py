@@ -16,11 +16,14 @@ from tenacity import RetryError, Retrying, stop_after_attempt
 
 from .captcha import get_validate, solve_recaptcha_manual
 from .captcha_solver import is_configured as captcha_solver_configured
-from .captcha_solver import solve_geetest
+from .captcha_solver import solve_geetest, solve_recaptcha
 from .captcha_broker import is_enabled, request_token
 from .data_model import TokenResultHandler
 from .logger import log
 from .request import post
+
+RECAPTCHA_SITE_KEY = "6LeBM0ocAAAAAEwYcFUjtxpVbs-0rnbSVXBBXmh4"
+RECAPTCHA_INVISIBLE_SITE_KEY = "6LeGW00cAAAAAG92ZOn8W3YAcy3jJifCuhy5iDvg"
 
 PUBLIC_KEY_PEM = """-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArxfNLkuAQ/BYHzkzVwtu
@@ -94,8 +97,47 @@ def is_incorrect_return(
 
 
 def get_token_by_recaptcha(url: str) -> Union[str, bool]:
-    """通过人工完成 reCAPTCHA 获取 TOKEN"""
+    """获取 reCAPTCHA TOKEN：优先自动打码，失败后转人工。"""
     try:
+        parsed = urlparse(url)
+        query = dict(parse_qsl(parsed.query))
+        verify_type = query.get("t", "4")
+        is_recaptcha = verify_type in {"4", "5"} or not (
+            query.get("c") and query.get("l")
+        )
+        if captcha_solver_configured() and query.get("e") and is_recaptcha:
+            site_key = (
+                RECAPTCHA_INVISIBLE_SITE_KEY
+                if verify_type == "5"
+                else RECAPTCHA_SITE_KEY
+            )
+            google_token = solve_recaptcha(
+                url,
+                site_key,
+                is_invisible=verify_type == "5",
+            )
+            if google_token:
+                params = {
+                    "k": "3dc42a135a8d45118034d1ab68213073",
+                    "locale": "zh_CN",
+                    "_t": round(time.time() * 1000),
+                }
+                data = {
+                    "e": query.get("e"),
+                    "g": google_token,
+                    "type": int(verify_type) if verify_type in {"4", "5"} else 4,
+                }
+                response = post(
+                    "https://verify.sec.xiaomi.com/captcha/v2/recaptcha/verify",
+                    params=params,
+                    headers=headers,
+                    data=data,
+                )
+                log.debug(response.text)
+                api_data = TokenResultHandler(response.json())
+                if api_data.success:
+                    return api_data.token
+                log.error("reCAPTCHA 自动校验失败，转人工验证")
         if is_enabled():
             log.info("等待验证码完成，请在本机运行验证助手")
         broker_token = request_token(url, timeout=300)
