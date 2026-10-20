@@ -15,7 +15,7 @@ from qrcode import QRCode, constants
 from tenacity import RetryError, Retrying, stop_after_attempt
 
 from .captcha import get_validate, solve_recaptcha_manual
-from .captcha_broker import request_token
+from .captcha_broker import is_enabled, request_token
 from .data_model import TokenResultHandler
 from .logger import log
 from .request import post
@@ -94,11 +94,13 @@ def is_incorrect_return(
 def get_token_by_recaptcha(url: str) -> Union[str, bool]:
     """通过人工完成 reCAPTCHA 获取 TOKEN"""
     try:
-        broker_token = request_token(url, timeout=180)
+        if is_enabled():
+            log.info("等待验证码完成，请在本机运行验证助手")
+        broker_token = request_token(url, timeout=300)
         if broker_token is not None:
             if broker_token:
                 return broker_token
-            log.error("网页人工验证超时，无法获取TOKEN")
+            log.error("验证码等待超时，请确认本机验证助手已运行")
             return False
         token = solve_recaptcha_manual(url)
         if token:
@@ -146,7 +148,7 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
         if api_data.success:
             return api_data.token
         elif not api_data.data.get("result"):
-            log.error("遇到人机验证码，无法获取TOKEN")
+            log.error("人机验证未完成，无法获取TOKEN")
             return False
         else:
             log.error("遇到未知错误，无法获取TOKEN")

@@ -29,13 +29,13 @@ cp .env.example .env
 python -m waitress --listen=127.0.0.1:8000 webapp.main:app
 ```
 
-访问 `http://127.0.0.1:8000`。面板支持运行任务、实时日志、逐行勾选日志显示、账号任务开关、个人信息/推送设置，以及人工验证码处理。本地运行时验证码会自动打开 Chrome，完成后自动捕获 token；服务器或 Docker 环境通过网页弹窗回填。
+访问 `http://127.0.0.1:8000`。面板支持运行任务、实时日志、账号任务开关、个人信息/推送设置，以及人工验证码处理。本地运行时验证码会自动打开 Chrome，完成后自动捕获 token；服务器或 Docker 环境使用本机验证助手自动回传，不需要复制粘贴。
 
 Telegram 每次运行结束只发送账号状态与加分汇总，不再发送完整脚本日志。
 
 面板必须设置 `WEB_PASSWORD` 才能访问；本地启动会自动加载项目根目录的 `.env`，浏览器会弹出 HTTP Basic 登录框。
 
-本机自动捕获验证码需要 `playwright` 和 Chrome；如果浏览器无法启动，可设置 `CAPTCHA_BROKER=1` 改用网页回填。
+本机自动捕获验证码需要 `playwright` 和 Chrome；如果浏览器无法启动，可执行 `playwright install chromium`。
 
 Docker Compose 部署：
 
@@ -45,7 +45,28 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-不配置定时任务，打开面板后点击“立即运行”即可。Docker 环境没有桌面，出现验证码时面板会弹出处理窗口；在浏览器完成验证后，把地址栏完整 URL 或 `flag` token 粘贴回来即可。
+不配置定时任务，打开面板后点击“立即运行”即可。
+
+### **服务器验证码**：
+Docker 容器没有桌面浏览器，无法在服务器上直接完成验证码。出现验证码时，在**你自己的电脑**上运行一次验证助手：
+
+```shell
+conda activate AutoXiaomi
+python captcha_helper.py --server http://你的服务器IP:8000
+```
+
+首次运行会提示输入面板密码。助手会轮询面板，验证码出现后自动打开本机 Chrome；你完成验证后，助手自动把 token 回传面板，任务继续执行，不需要复制粘贴。保持助手窗口运行即可处理后续验证码。
+
+Docker 部署时面板设置里应显示“验证码方式：网页自动回传”；如果显示“本机浏览器自动捕获”，说明容器没有启用验证码中转，请重新执行 `docker compose up -d --build`。
+
+也可以在面板的验证码弹窗里点击“下载验证助手”，或直接复制弹窗中生成的命令。助手依赖本机 `requests`、`playwright` 和 Chrome：
+
+```shell
+pip install requests playwright
+playwright install chromium
+```
+
+如果本机无法运行助手，弹窗里仍保留“手动提交”作为兜底。
 
 首次构建会下载基础镜像和依赖，可能持续几分钟。`docker compose up -d` 默认不显示构建进度，建议先单独构建：
 

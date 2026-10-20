@@ -174,6 +174,17 @@ def index():
     return send_from_directory(BASE_DIR / "static", "index.html")
 
 
+@app.get("/captcha-helper.py")
+def captcha_helper_file():
+    """下载本机验证助手。"""
+    return send_from_directory(
+        BASE_DIR.parent,
+        "captcha_helper.py",
+        as_attachment=True,
+        download_name="captcha_helper.py",
+    )
+
+
 @app.get("/api/state")
 def state():
     after = request.args.get("after", default=0, type=int) or 0
@@ -215,6 +226,17 @@ def update_account(index: int):
     if not ConfigManager.write_plugin_data():
         return jsonify({"detail": "配置保存失败"}), 500
     return jsonify({"accounts": _accounts_payload()})
+
+
+@app.get("/api/captcha/pending")
+def captcha_pending():
+    """返回当前等待处理的验证码，供本机验证助手轮询。"""
+    return jsonify(
+        {
+            "captcha": pending_captcha(),
+            "mode": "web" if CAPTCHA_BROKER_ENABLED else "browser",
+        }
+    )
 
 
 @app.post("/api/captcha/submit")

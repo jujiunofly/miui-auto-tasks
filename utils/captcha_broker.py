@@ -51,7 +51,7 @@ def _extract_token(value: str) -> str:
     return unquote(value)
 
 
-def request_token(url: str, timeout: int = 180):
+def request_token(url: str, timeout: int = 300):
     """等待 Web 前端提交 token。
 
     返回 None 表示当前未启用 Web 中转；返回空字符串表示超时或失败。
@@ -79,8 +79,12 @@ def request_token(url: str, timeout: int = 180):
 
 def pending():
     """获取等待处理的验证码请求"""
+    now = time.time()
     with _lock:
-        return list(_pending.values())
+        return [
+            {**item, "expires_in": max(0, int(item["expires"] - now))}
+            for item in _pending.values()
+        ]
 
 
 def submit(request_id: str, value: str) -> bool:

@@ -160,7 +160,7 @@ function renderTelegram(telegram) {
   const lines = [
     `通知渠道：${telegram.notifier || "未配置"}`,
     `标题：${telegram.title || "默认"}`,
-    `验证码方式：${state.captchaMode === "web" ? "网页弹窗粘贴" : "本机浏览器自动捕获"}`,
+    `验证码方式：${state.captchaMode === "web" ? "网页自动回传" : "本机浏览器自动捕获"}`,
     "每次运行结束自动发送账号状态与加分汇总。",
   ];
   lines.forEach((line) => {
@@ -214,7 +214,7 @@ function renderSettings(data) {
 
   const note = document.createElement("div");
   note.className = "settings-note";
-  note.textContent = `验证码方式：${data.captcha_mode === "web" ? "网页弹窗粘贴" : "本机浏览器自动捕获"}。修改账号资料后，下次运行生效。`;
+  note.textContent = `验证码方式：${data.captcha_mode === "web" ? "网页自动回传" : "本机浏览器自动捕获"}。修改账号资料后，下次运行生效。`;
   root.appendChild(note);
 
   data.accounts.forEach((account) => {
@@ -414,10 +414,30 @@ function addLogs(logs) {
 
 function openCaptchaModal() {
   if (!state.pendingCaptcha) return;
-  $("captchaModal").classList.remove("hidden");
+  $("captchaCommand").textContent = `python captcha_helper.py --server ${location.origin}`;
   $("captchaLink").href = state.pendingCaptcha.url;
+  $("captchaStatus").textContent = "等待本机助手连接...";
   $("captchaValue").value = "";
-  $("captchaValue").focus();
+  $("captchaModal").classList.remove("hidden");
+}
+
+async function copyCaptchaCommand() {
+  const text = $("captchaCommand").textContent;
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch (_) {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    copied = document.execCommand("copy");
+    area.remove();
+  }
+  toast(copied ? "命令已复制" : "复制失败，请手动选择命令", copied ? "success" : "error");
 }
 
 function closeCaptchaModal() {
@@ -438,6 +458,7 @@ function syncCaptcha(pending) {
   if (item.id !== state.captchaSubmittedId && item.id !== state.captchaDismissedId) {
     const modalHidden = $("captchaModal").classList.contains("hidden");
     if (modalHidden) openCaptchaModal();
+    else $("captchaStatus").textContent = "等待本机助手连接...";
   }
 }
 
@@ -521,6 +542,7 @@ $("autoScroll").addEventListener("change", (event) => {
   state.autoScroll = event.target.checked;
 });
 $("captchaBtn").addEventListener("click", openCaptchaModal);
+$("captchaCopy").addEventListener("click", copyCaptchaCommand);
 $("captchaClose").addEventListener("click", closeCaptchaModal);
 $("captchaLater").addEventListener("click", closeCaptchaModal);
 $("captchaSubmit").addEventListener("click", submitCaptcha);

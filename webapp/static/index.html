@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MIUI Auto Tasks</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
   <div class="app-shell">
@@ -103,12 +103,29 @@
         </div>
         <button id="captchaClose" class="icon-btn" type="button" aria-label="关闭">×</button>
       </div>
-      <p class="muted">打开验证页面完成验证。页面最后可能显示“无法访问此网站”，这是正常现象；复制地址栏里的完整 URL，或者只复制 <code>flag</code> 的值粘贴到下面。</p>
-      <a id="captchaLink" class="captcha-link" href="#" target="_blank" rel="noopener">打开验证页面</a>
-      <textarea id="captchaValue" rows="4" placeholder="粘贴完整回调 URL，或 flag token"></textarea>
+      <p class="muted">服务器没有桌面浏览器，验证码需要在你自己的电脑上完成。启动一次本机验证助手，之后会自动打开验证页并回传结果，不需要复制粘贴。</p>
+      <div class="captcha-command">
+        <code id="captchaCommand">python captcha_helper.py --server http://127.0.0.1:8000</code>
+        <button id="captchaCopy" class="btn ghost small" type="button">复制命令</button>
+      </div>
+      <div class="captcha-actions">
+        <a id="captchaDownload" class="btn ghost small" href="/captcha-helper.py">下载验证助手</a>
+        <span id="captchaStatus" class="muted">等待本机助手连接...</span>
+      </div>
+      <ol class="captcha-steps">
+        <li>在本机项目目录打开终端，先激活安装了 playwright 的环境（例如 <code>conda activate AutoXiaomi</code>），再运行上面的命令。</li>
+        <li>浏览器会自动打开小米验证页，完成验证。</li>
+        <li>验证完成后助手自动回传，面板继续执行任务。</li>
+      </ol>
+      <details class="captcha-fallback">
+        <summary>无法运行助手？手动提交</summary>
+        <p class="muted">打开验证页完成验证后，把地址栏完整 URL 或 <code>flag</code> 粘贴到这里。</p>
+        <a id="captchaLink" class="captcha-link" href="#" target="_blank" rel="noopener">打开验证页面</a>
+        <textarea id="captchaValue" rows="3" placeholder="完整回调 URL，或 flag token"></textarea>
+        <button id="captchaSubmit" class="btn primary" type="button">提交验证</button>
+      </details>
       <div class="modal-actions">
         <button id="captchaLater" class="btn ghost" type="button">稍后处理</button>
-        <button id="captchaSubmit" class="btn primary" type="button">提交验证</button>
       </div>
     </div>
   </div>
@@ -132,6 +149,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>
