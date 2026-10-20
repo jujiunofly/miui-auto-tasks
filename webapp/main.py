@@ -11,6 +11,8 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from utils.captcha_broker import enable as enable_captcha_broker
 from utils.captcha_broker import pending as pending_captcha
 from utils.captcha_broker import submit as submit_captcha
+from utils.captcha_solver import is_configured as captcha_solver_configured
+from utils.captcha_solver import provider as captcha_provider
 from utils.config import ConfigManager
 from utils.logger import LogCenter
 
@@ -37,6 +39,13 @@ def _use_web_captcha_broker() -> bool:
 CAPTCHA_BROKER_ENABLED = _use_web_captcha_broker()
 if CAPTCHA_BROKER_ENABLED:
     enable_captcha_broker()
+
+
+def _captcha_mode() -> str:
+    """返回面板展示的验证码处理方式。"""
+    if captcha_solver_configured():
+        return f"auto:{captcha_provider()}"
+    return "web" if CAPTCHA_BROKER_ENABLED else "browser"
 
 TASK_FIELDS = [
     "CheckIn",
@@ -160,7 +169,7 @@ def _settings_payload():
             "markdown": bool(params.get("markdown", False)),
             "has_token": bool(params.get("token")),
         },
-        "captcha_mode": "web" if CAPTCHA_BROKER_ENABLED else "browser",
+        "captcha_mode": _captcha_mode(),
     }
 
 
@@ -195,7 +204,7 @@ def state():
             "accounts": _accounts_payload(),
             "telegram": _telegram_payload(),
             "captcha": pending_captcha(),
-            "captcha_mode": "web" if CAPTCHA_BROKER_ENABLED else "browser",
+            "captcha_mode": _captcha_mode(),
         }
     )
     return jsonify(payload)
@@ -234,7 +243,7 @@ def captcha_pending():
     return jsonify(
         {
             "captcha": pending_captcha(),
-            "mode": "web" if CAPTCHA_BROKER_ENABLED else "browser",
+            "mode": _captcha_mode(),
         }
     )
 

@@ -15,6 +15,8 @@ from qrcode import QRCode, constants
 from tenacity import RetryError, Retrying, stop_after_attempt
 
 from .captcha import get_validate, solve_recaptcha_manual
+from .captcha_solver import is_configured as captcha_solver_configured
+from .captcha_solver import solve_geetest
 from .captcha_broker import is_enabled, request_token
 from .data_model import TokenResultHandler
 from .logger import log
@@ -122,7 +124,21 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
         if not gt or not challenge:
             return get_token_by_recaptcha(url)
         geetest_data = get_validate(gt, challenge)
-        if not geetest_data.validate or not geetest_data.challenge:
+        challenge_value = geetest_data.challenge or challenge
+        seccode = ""
+        if geetest_data.validate:
+            seccode = f"{geetest_data.validate}|jordan"
+        elif captcha_solver_configured():
+            solution = solve_geetest(
+                url,
+                gt,
+                challenge,
+                headers.get("User-Agent", ""),
+            )
+            if solution:
+                challenge_value = solution["challenge"]
+                seccode = solution["seccode"]
+        if not seccode:
             return get_token_by_recaptcha(url)
         params = {
             "k": "3dc42a135a8d45118034d1ab68213073",
@@ -132,8 +148,8 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
 
         data = {
             "e": query_params.get("e"),  # 人机验证的e参数，来自URL
-            "challenge": geetest_data.challenge,
-            "seccode": f"{geetest_data.validate}|jordan",
+            "challenge": challenge_value,
+            "seccode": seccode,
         }
 
         response = post(

@@ -58,6 +58,11 @@ function statusText(status) {
   }[status] || "待运行";
 }
 
+function captchaModeText(mode) {
+  if (mode?.startsWith("auto:")) return `自动打码 (${mode.split(":")[1]})`;
+  return mode === "web" ? "网页自动回传" : "本机浏览器自动捕获";
+}
+
 function setStatus(running, lastRun) {
   const pill = $("statusPill");
   const status = running ? "running" : (lastRun?.status || "idle");
@@ -160,7 +165,7 @@ function renderTelegram(telegram) {
   const lines = [
     `通知渠道：${telegram.notifier || "未配置"}`,
     `标题：${telegram.title || "默认"}`,
-    `验证码方式：${state.captchaMode === "web" ? "网页自动回传" : "本机浏览器自动捕获"}`,
+    `验证码方式：${captchaModeText(state.captchaMode)}`,
     "每次运行结束自动发送账号状态与加分汇总。",
   ];
   lines.forEach((line) => {
@@ -214,7 +219,7 @@ function renderSettings(data) {
 
   const note = document.createElement("div");
   note.className = "settings-note";
-  note.textContent = `验证码方式：${data.captcha_mode === "web" ? "网页自动回传" : "本机浏览器自动捕获"}。修改账号资料后，下次运行生效。`;
+  note.textContent = `验证码方式：${captchaModeText(data.captcha_mode)}。修改账号资料后，下次运行生效。`;
   root.appendChild(note);
 
   data.accounts.forEach((account) => {

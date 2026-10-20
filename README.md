@@ -68,6 +68,30 @@ playwright install chromium
 
 如果本机无法运行助手，弹窗里仍保留“手动提交”作为兜底。
 
+### **手机端 / 全自动打码**：
+如果不想开电脑，或者想直接用手机打开面板运行，可以配置服务器端付费打码。配置后验证码由服务器自动完成，手机只需点“立即运行”。
+
+在 `.env` 中增加：
+
+```env
+CAPTCHA_PROVIDER=2captcha
+CAPTCHA_API_KEY=你的API_KEY
+```
+
+也支持 `CAPTCHA_PROVIDER=capsolver`。然后重建容器：
+
+```shell
+docker compose up -d --force-recreate
+```
+
+面板设置里显示“验证码方式：自动打码 (2captcha/capsolver)”即生效。自动打码失败时会自动回退到网页助手/手动提交。
+
+常用服务：
+- 2Captcha：https://2captcha.com
+- CapSolver：https://www.capsolver.com
+
+打码按次收费，通常单次几厘到几分钱，具体价格以服务商为准。
+
 首次构建会下载基础镜像和依赖，可能持续几分钟。`docker compose up -d` 默认不显示构建进度，建议先单独构建：
 
 ```shell
