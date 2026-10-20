@@ -417,6 +417,14 @@ function addLogs(logs) {
   renderLogs();
 }
 
+function isGeetestCaptcha(item) {
+  if (!item?.url) return false;
+  const source = new URL(item.url);
+  const type = source.searchParams.get("t");
+  if (type === "4" || type === "5") return false;
+  return source.searchParams.has("c") && source.searchParams.has("l");
+}
+
 function buildRelayUrl(item) {
   if (!item?.url || !item?.relay_token) return item?.url || "";
   const source = new URL(item.url);
@@ -426,11 +434,26 @@ function buildRelayUrl(item) {
   return `${location.origin}/v2/html/check.html?${params.toString()}`;
 }
 
+function buildDirectUrl(item) {
+  if (!item?.url) return "";
+  const source = new URL(item.url);
+  if (item.id) source.searchParams.set("id", item.id);
+  if (item.relay_token) source.searchParams.set("relay_token", item.relay_token);
+  return source.toString();
+}
+
 function openCaptchaModal() {
   if (!state.pendingCaptcha) return;
+  const geetest = isGeetestCaptcha(state.pendingCaptcha);
   $("captchaCommand").textContent = `python captcha_helper.py --server ${location.origin}`;
   $("captchaLink").href = state.pendingCaptcha.url;
-  $("captchaRelayLink").href = buildRelayUrl(state.pendingCaptcha);
+  $("captchaRelayLink").href = geetest
+    ? buildRelayUrl(state.pendingCaptcha)
+    : buildDirectUrl(state.pendingCaptcha);
+  $("captchaUserscript").classList.toggle("hidden", geetest);
+  $("captchaHint").textContent = geetest
+    ? "点击“打开验证页面”，在弹窗里完成验证。验证成功后会自动回传，面板继续执行，不需要复制粘贴。"
+    : "这次是 Google reCAPTCHA。先安装一次手机自动回传脚本，再打开验证页面；完成后会自动回传。";
   $("captchaStatus").textContent = "等待验证...";
   $("captchaValue").value = "";
   $("captchaModal").classList.remove("hidden");
@@ -438,7 +461,10 @@ function openCaptchaModal() {
 
 function openCaptchaWindow() {
   if (!state.pendingCaptcha) return;
-  const url = buildRelayUrl(state.pendingCaptcha);
+  const geetest = isGeetestCaptcha(state.pendingCaptcha);
+  const url = geetest
+    ? buildRelayUrl(state.pendingCaptcha)
+    : buildDirectUrl(state.pendingCaptcha);
   if (!url) {
     toast("验证链接无效，请重试", "error");
     return;
@@ -452,7 +478,9 @@ function openCaptchaWindow() {
     toast("浏览器拦截了弹窗，请允许弹窗后重试", "error");
     return;
   }
-  $("captchaStatus").textContent = "验证完成后会自动返回...";
+  $("captchaStatus").textContent = geetest
+    ? "验证完成后会自动返回..."
+    : "脚本模式下完成后会自动返回...";
 }
 
 async function copyCaptchaCommand() {

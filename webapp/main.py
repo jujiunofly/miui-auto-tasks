@@ -6,7 +6,7 @@ import platform
 import secrets
 from html import escape
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -87,7 +87,12 @@ app = Flask(
 @app.before_request
 def auth_guard():
     """保护面板和 API，静态资源除外。"""
-    if request.path in {"/health", "/v2/html/check.html", "/api/captcha/relay-submit"}:
+    if request.path in {
+        "/health",
+        "/v2/html/check.html",
+        "/api/captcha/relay-submit",
+        "/captcha-userscript.user.js",
+    }:
         return None
     if request.path.startswith("/static/"):
         return None
@@ -191,6 +196,140 @@ def index():
     return send_from_directory(BASE_DIR / "static", "index.html")
 
 
+CAPTCHA_USERSCRIPT = r"""// ==UserScript==
+// @name         MIUI 验证码自动回传
+// @namespace    miui-auto-tasks
+// @version      1.0
+// @description  在小米验证页完成后自动把 token 回传到面板
+// @match        https://static-verify.sec.xiaomi.com/*
+// @run-at       document-start
+// @grant        GM_xmlhttpRequest
+// @connect      *
+// ==/UserScript==
+
+(function () {
+  "use strict";
+  var SERVER = "__SERVER__";
+  var SERVER_ORIGIN = SERVER;
+  try { SERVER_ORIGIN = new URL(SERVER).origin; } catch (e) {}
+  var params = new URLSearchParams(location.search);
+  var requestId = params.get("id") || "";
+  var relayToken = params.get("relay_token") || "";
+  if (!requestId || !relayToken) return;
+  var realInit = null;
+  var finished = false;
+
+  function overlay(ok, message) {
+    function render() {
+      document.title = ok ? "验证成功" : "验证失败";
+      document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;background:#f6f8fb;color:#1d2733;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;text-align:center"><div id="miui-auto-return-box" style="max-width:420px"></div></div>';
+      var box = document.getElementById("miui-auto-return-box");
+      var icon = document.createElement("div");
+      icon.textContent = ok ? "✓" : "!";
+      icon.style.cssText = "font-size:42px;line-height:1;margin-bottom:16px;color:" + (ok ? "#12805c" : "#d92d20");
+      var title = document.createElement("h1");
+      title.textContent = message;
+      title.style.cssText = "font-size:22px;margin:0 0 10px";
+      var hint = document.createElement("p");
+      hint.textContent = ok ? "面板会自动继续执行，可以关闭此页。" : "请回到面板重新打开验证页面。";
+      hint.style.cssText = "color:#667085;font-size:14px;line-height:1.7;margin:0";
+      box.append(icon, title, hint);
+    }
+    if (document.body) render();
+    else document.addEventListener("DOMContentLoaded", render, {once: true});
+  }
+
+  function finish(ok, message) {
+    if (finished) return;
+    finished = true;
+    overlay(ok, message);
+    try {
+      if (window.opener) {
+        window.opener.postMessage(
+          {type: "captcha-complete", ok: ok, id: requestId},
+          SERVER_ORIGIN
+        );
+      }
+    } catch (e) {}
+    if (ok) setTimeout(function () { window.close(); }, 1400);
+  }
+
+  function post(value) {
+    var payload = JSON.stringify({
+      id: requestId,
+      relay_token: relayToken,
+      value: value
+    });
+    function done(ok) {
+      if (ok) finish(true, "验证成功，已自动返回");
+      else finish(false, "回传失败，请回到面板重试");
+    }
+    if (typeof GM_xmlhttpRequest === "function") {
+      GM_xmlhttpRequest({
+        method: "POST",
+        url: SERVER + "/api/captcha/relay-submit",
+        headers: {"Content-Type": "application/json"},
+        data: payload,
+        onload: function (response) {
+          done(response.status >= 200 && response.status < 300);
+        },
+        onerror: function () { done(false); }
+      });
+    } else {
+      fetch(SERVER + "/api/captcha/relay-submit", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: payload
+      }).then(function (response) {
+        done(response.ok);
+      }).catch(function () { done(false); });
+    }
+  }
+
+  Object.defineProperty(window, "initMiverify", {
+    configurable: true,
+    set: function (fn) {
+      realInit = fn;
+      window.__miuiAutoReturnInit = function (conf, cb) {
+        conf.onSuccess = function (token) {
+          post(token && token.flag ? token.flag : "");
+        };
+        conf.onClose = function () { finish(false, "验证已取消"); };
+        conf.onError = function () { finish(false, "验证失败，请重试"); };
+        if (typeof realInit !== "function") {
+          finish(false, "验证页加载失败");
+          return;
+        }
+        return realInit(conf, cb);
+      };
+    },
+    get: function () { return window.__miuiAutoReturnInit; }
+  });
+})();
+"""
+
+
+@app.after_request
+def captcha_relay_cors(response):
+    """允许小米验证页脚本跨域回传 token。"""
+    if request.path == "/api/captcha/relay-submit":
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    return response
+
+
+@app.get("/captcha-userscript.user.js")
+def captcha_userscript():
+    """下载手机端油猴脚本，适用于 reCAPTCHA 验证。"""
+    server = request.url_root.rstrip("/")
+    return Response(
+        CAPTCHA_USERSCRIPT.replace("__SERVER__", server),
+        mimetype="application/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 def _relay_error(message: str, status: int = 400):
     html = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -223,6 +362,20 @@ def captcha_relay_page():
         or not parsed.path.startswith("/v2/html/check")
     ):
         return _relay_error("验证链接无效。", 400)
+    query = dict(parse_qsl(parsed.query))
+    force_geetest = bool(
+        query.get("c")
+        and query.get("l")
+        and query.get("t") not in {"4", "5"}
+    )
+    if not force_geetest:
+        return _relay_error(
+            "当前账号被小米要求 Google reCAPTCHA，"
+            "它的站点密钥只允许小米域名，面板中转无法完成。"
+            "请使用弹窗里的“其他方式”（电脑助手/手动提交），"
+            "或配置付费打码。",
+            409,
+        )
 
     try:
         upstream = requests.get(
@@ -254,7 +407,21 @@ def captcha_relay_page():
 (function () {
   var requestId = __REQUEST_ID__;
   var relayToken = __RELAY_TOKEN__;
+  var forceGeetest = __FORCE_GEETEST__;
   var base = window.initMiverify;
+  if (forceGeetest) {
+    Object.defineProperty(window, "startMiverify", {
+      configurable: true,
+      set: function (fn) {
+        window.__realStartMiverify = fn;
+        window.__wrappedStartMiverify = function (conf, cb) {
+          conf.reCAPTCHA = false;
+          return fn(conf, cb);
+        };
+      },
+      get: function () { return window.__wrappedStartMiverify; }
+    });
+  }
   function finish(ok, message) {
     document.title = ok ? "验证成功" : "验证失败";
     document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px;background:#f6f8fb;color:#1d2733;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;text-align:center"><div id="relay-box" style="max-width:420px"></div></div>';
@@ -305,7 +472,9 @@ def captcha_relay_page():
 """
     relay_script = relay_script.replace(
         "__REQUEST_ID__", json.dumps(request_id)
-    ).replace("__RELAY_TOKEN__", json.dumps(relay_token))
+    ).replace("__RELAY_TOKEN__", json.dumps(relay_token)).replace(
+        "__FORCE_GEETEST__", json.dumps(force_geetest)
+    )
     marker = '<script type="text/javascript">'
     if marker not in html:
         return _relay_error("验证页格式异常。", 502)
