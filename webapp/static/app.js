@@ -17,6 +17,9 @@ const state = {
   pendingCaptcha: null,
   captchaSubmittedId: "",
   captchaDismissedId: "",
+  remoteCaptcha: null,
+  remoteWidth: 390,
+  remoteHeight: 844,
   toastTimer: null,
 };
 
@@ -59,6 +62,7 @@ function statusText(status) {
 }
 
 function captchaModeText(mode) {
+  if (mode === "remote") return "服务器远程验证";
   if (mode?.startsWith("auto:")) return `自动打码 (${mode.split(":")[1]})`;
   return mode === "web" ? "网页自动回传" : "本机浏览器自动捕获";
 }
@@ -442,7 +446,117 @@ function buildDirectUrl(item) {
   return source.toString();
 }
 
+function remoteActive() {
+  return Boolean(state.remoteCaptcha?.active);
+}
+
+function refreshRemoteScreen() {
+  if (!remoteActive()) return;
+  const img = $("captchaRemoteScreen");
+  if (img) img.src = `/api/captcha/remote/screen?t=${Date.now()}`;
+}
+
+function openRemoteModal() {
+  const remote = state.remoteCaptcha;
+  if (!remote?.active) return;
+  state.remoteWidth = remote.width || 390;
+  state.remoteHeight = remote.height || 844;
+  state.pendingCaptcha = state.pendingCaptcha || {
+    id: remote.id,
+    url: "",
+    relay_token: "",
+  };
+  $("captchaBtn").classList.remove("hidden");
+  $("captchaHint").textContent = "服务器已经打开小米验证页。直接在下面的画面上点击完成验证，完成后会自动返回。";
+  $("captchaStatus").textContent = "等待验证...";
+  $("captchaOpen").classList.add("hidden");
+  $("captchaRelayLink").classList.add("hidden");
+  $("captchaUserscript").classList.add("hidden");
+  $("captchaRemote").classList.remove("hidden");
+  $("captchaModal").classList.remove("hidden");
+  refreshRemoteScreen();
+}
+
+function syncRemote(remote) {
+  state.remoteCaptcha = remote || null;
+  if (remote?.active) {
+    $("captchaBtn").classList.remove("hidden");
+    if (remote.id !== state.captchaDismissedId) {
+      if ($("captchaModal").classList.contains("hidden")) openRemoteModal();
+      else refreshRemoteScreen();
+    } else if (!$("captchaModal").classList.contains("hidden")) {
+      refreshRemoteScreen();
+    }
+    return;
+  }
+  $("captchaRemote").classList.add("hidden");
+  $("captchaOpen").classList.remove("hidden");
+  if (state.pendingCaptcha && !state.pendingCaptcha.url) state.pendingCaptcha = null;
+  if (state.pendingCaptcha?.url) {
+    if (!$("captchaModal").classList.contains("hidden")) openCaptchaModal();
+  } else if (!$("captchaModal").classList.contains("hidden")) {
+    closeCaptchaModal();
+  }
+}
+
+async function remoteClick(event) {
+  if (!remoteActive()) return;
+  const img = $("captchaRemoteScreen");
+  const rect = img.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const ratio = state.remoteWidth / state.remoteHeight;
+  let contentWidth = rect.width;
+  let contentHeight = rect.height;
+  if (rect.width / rect.height > ratio) contentWidth = rect.height * ratio;
+  else contentHeight = rect.width / ratio;
+  const offsetX = (rect.width - contentWidth) / 2;
+  const offsetY = (rect.height - contentHeight) / 2;
+  const x = ((event.clientX - rect.left - offsetX) / contentWidth) * state.remoteWidth;
+  const y = ((event.clientY - rect.top - offsetY) / contentHeight) * state.remoteHeight;
+  if (x < 0 || y < 0 || x > state.remoteWidth || y > state.remoteHeight) return;
+  try {
+    await api("/api/captcha/remote/click", {
+      method: "POST",
+      body: JSON.stringify({ x, y }),
+    });
+    $("captchaStatus").textContent = "已点击，等待画面刷新...";
+    setTimeout(refreshRemoteScreen, 500);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function remoteKey(key) {
+  if (!remoteActive()) return;
+  try {
+    await api("/api/captcha/remote/key", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    });
+    setTimeout(refreshRemoteScreen, 300);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function remoteScroll(delta) {
+  if (!remoteActive()) return;
+  try {
+    await api("/api/captcha/remote/scroll", {
+      method: "POST",
+      body: JSON.stringify({ delta }),
+    });
+    setTimeout(refreshRemoteScreen, 300);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
 function openCaptchaModal() {
+  if (remoteActive()) {
+    openRemoteModal();
+    return;
+  }
   if (!state.pendingCaptcha) return;
   const geetest = isGeetestCaptcha(state.pendingCaptcha);
   $("captchaCommand").textContent = `python captcha_helper.py --server ${location.origin}`;
@@ -456,6 +570,8 @@ function openCaptchaModal() {
     : "这次是 Google reCAPTCHA。先安装一次手机自动回传脚本，再打开验证页面；完成后会自动回传。";
   $("captchaStatus").textContent = "等待验证...";
   $("captchaValue").value = "";
+  $("captchaRemote").classList.add("hidden");
+  $("captchaOpen").classList.remove("hidden");
   $("captchaModal").classList.remove("hidden");
 }
 
@@ -508,6 +624,10 @@ function closeCaptchaModal() {
 }
 
 function syncCaptcha(pending) {
+  if (remoteActive()) {
+    $("captchaBtn").classList.remove("hidden");
+    return;
+  }
   const item = pending?.[0] || null;
   state.pendingCaptcha = item;
   $("captchaBtn").classList.toggle("hidden", !item);
@@ -582,6 +702,7 @@ async function poll() {
     renderTelegram(data.telegram || {});
     setStatus(state.running, state.lastRun);
     addLogs(data.logs || []);
+    syncRemote(data.remote_captcha || null);
     syncCaptcha(data.captcha || []);
   } catch (error) {
     if (error.status !== 401) toast(error.message, "error");
@@ -604,6 +725,11 @@ $("autoScroll").addEventListener("change", (event) => {
 });
 $("captchaBtn").addEventListener("click", openCaptchaModal);
 $("captchaOpen").addEventListener("click", openCaptchaWindow);
+$("captchaRemoteScreen").addEventListener("click", remoteClick);
+$("captchaRemoteBackspace").addEventListener("click", () => remoteKey("Backspace"));
+$("captchaRemoteEnter").addEventListener("click", () => remoteKey("Enter"));
+$("captchaRemoteUp").addEventListener("click", () => remoteScroll(-500));
+$("captchaRemoteDown").addEventListener("click", () => remoteScroll(500));
 $("captchaCopy").addEventListener("click", copyCaptchaCommand);
 $("captchaClose").addEventListener("click", closeCaptchaModal);
 $("captchaLater").addEventListener("click", closeCaptchaModal);

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MIUI Auto Tasks</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=12">
 </head>
 <body>
   <div class="app-shell">
@@ -104,6 +104,16 @@
         <button id="captchaClose" class="icon-btn" type="button" aria-label="关闭">×</button>
       </div>
       <p id="captchaHint" class="muted">点击“打开验证页面”，在弹窗里完成验证。验证成功后会自动回传，面板继续执行，不需要复制粘贴。</p>
+      <div id="captchaRemote" class="captcha-remote hidden">
+        <p class="muted">服务器已经打开小米验证页。直接在下面的画面上点击完成验证，完成后会自动返回。</p>
+        <img id="captchaRemoteScreen" alt="服务器验证码画面">
+        <div class="captcha-remote-actions">
+          <button id="captchaRemoteBackspace" class="btn ghost small" type="button">退格</button>
+          <button id="captchaRemoteEnter" class="btn ghost small" type="button">回车</button>
+          <button id="captchaRemoteUp" class="btn ghost small" type="button">上滚</button>
+          <button id="captchaRemoteDown" class="btn ghost small" type="button">下滚</button>
+        </div>
+      </div>
       <div class="captcha-actions">
         <button id="captchaOpen" class="btn primary" type="button">打开验证页面</button>
         <span id="captchaStatus" class="muted">等待验证...</span>
@@ -156,6 +166,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js?v=11"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>

@@ -17,6 +17,7 @@ from tenacity import RetryError, Retrying, stop_after_attempt
 from .captcha import get_validate, solve_recaptcha_manual
 from .captcha_solver import is_configured as captcha_solver_configured
 from .captcha_solver import solve_geetest, solve_recaptcha
+from . import remote_captcha
 from .captcha_broker import is_enabled, request_token
 from .data_model import TokenResultHandler
 from .logger import log
@@ -138,6 +139,13 @@ def get_token_by_recaptcha(url: str) -> Union[str, bool]:
                 if api_data.success:
                     return api_data.token
                 log.error("reCAPTCHA 自动校验失败，转人工验证")
+        if remote_captcha.enabled() and is_recaptcha:
+            log.info("启动服务器远程验证码")
+            session = remote_captcha.start(url, timeout=300)
+            token = session.wait()
+            if token:
+                return token
+            log.error("服务器远程验证码未完成，转网页/人工验证")
         if is_enabled():
             log.info("等待验证码完成，请在本机运行验证助手")
         broker_token = request_token(url, timeout=300)

@@ -369,6 +369,30 @@ select {
   margin-bottom: 12px;
 }
 .captcha-actions .muted { font-size: 12px; }
+.captcha-remote {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.captcha-remote img {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: manipulation;
+}
+.captcha-remote-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
 .captcha-alt-link {
   display: inline-block;
   margin: 2px 0 14px;

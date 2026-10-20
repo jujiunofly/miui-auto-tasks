@@ -20,6 +20,7 @@ from utils.captcha_broker import submit as submit_captcha
 from utils.captcha_broker import submit_relay as submit_relay_captcha
 from utils.captcha_solver import is_configured as captcha_solver_configured
 from utils.captcha_solver import provider as captcha_provider
+from utils import remote_captcha
 from utils.config import ConfigManager
 from utils.logger import LogCenter, log
 
@@ -50,6 +51,8 @@ if CAPTCHA_BROKER_ENABLED:
 
 def _captcha_mode() -> str:
     """返回面板展示的验证码处理方式。"""
+    if remote_captcha.enabled():
+        return "remote"
     if captcha_solver_configured():
         return f"auto:{captcha_provider()}"
     return "web" if CAPTCHA_BROKER_ENABLED else "browser"
@@ -515,6 +518,7 @@ def state():
             "accounts": _accounts_payload(),
             "telegram": _telegram_payload(),
             "captcha": pending_captcha(),
+            "remote_captcha": remote_captcha.current(),
             "captcha_mode": _captcha_mode(),
         }
     )
@@ -557,6 +561,62 @@ def captcha_pending():
             "mode": _captcha_mode(),
         }
     )
+
+
+@app.get("/api/captcha/remote/screen")
+def captcha_remote_screen():
+    """返回服务器远程验证码的当前画面。"""
+    data = remote_captcha.screenshot()
+    if not data:
+        return Response(status=404)
+    return Response(
+        data,
+        mimetype="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/captcha/remote/click")
+def captcha_remote_click():
+    data = request.get_json(silent=True) or {}
+    try:
+        x = float(data.get("x"))
+        y = float(data.get("y"))
+    except (TypeError, ValueError):
+        return jsonify({"detail": "坐标无效"}), 400
+    remote_captcha.click(x, y)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/captcha/remote/key")
+def captcha_remote_key():
+    data = request.get_json(silent=True) or {}
+    key = str(data.get("key") or "")
+    if not key:
+        return jsonify({"detail": "按键为空"}), 400
+    remote_captcha.press(key)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/captcha/remote/type")
+def captcha_remote_type():
+    data = request.get_json(silent=True) or {}
+    text = str(data.get("text") or "")
+    if not text:
+        return jsonify({"detail": "文本为空"}), 400
+    remote_captcha.type_text(text)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/captcha/remote/scroll")
+def captcha_remote_scroll():
+    data = request.get_json(silent=True) or {}
+    try:
+        delta = int(data.get("delta"))
+    except (TypeError, ValueError):
+        return jsonify({"detail": "滚动值无效"}), 400
+    remote_captcha.scroll(delta)
+    return jsonify({"ok": True})
 
 
 @app.post("/api/captcha/relay-submit")
