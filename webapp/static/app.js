@@ -293,7 +293,6 @@ function renderSettings(data) {
     createField("开始时间", data.schedule?.start_time || "09:00", {
       field: "schedule_start",
       type: "time",
-      hint: "每天在开始和结束时间之间随机选一个时间运行一次（Asia/Shanghai，结束需晚于开始）。",
     }),
     createField("结束时间", data.schedule?.end_time || "11:00", {
       field: "schedule_end",
@@ -301,6 +300,10 @@ function renderSettings(data) {
     }),
   );
   captchaSection.appendChild(captchaGrid);
+  const timeHint = document.createElement("div");
+  timeHint.className = "settings-note";
+  timeHint.textContent = "每天在开始和结束时间之间随机选一个时间运行一次（Asia/Shanghai，结束需晚于开始）。";
+  captchaSection.appendChild(timeHint);
   captchaSection.appendChild(
     createCheckboxField(
       "启用每天定时运行",
