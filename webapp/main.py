@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlparse
 import requests
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from utils.captcha_broker import enable as enable_captcha_broker
 from utils.captcha_broker import get as get_captcha
@@ -81,6 +82,13 @@ app = Flask(
     __name__,
     static_folder=str(BASE_DIR / "static"),
     static_url_path="/static",
+)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+    x_port=1,
 )
 
 
