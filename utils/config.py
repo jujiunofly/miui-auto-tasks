@@ -187,13 +187,44 @@ class Preference:
         self.get_geetest_try_count = get_geetest_try_count
         """获取极验验证结果尝试次数"""
 
+
+class Captcha:
+    """验证码配置"""
+
+    def __init__(self, mode="remote", provider="capzy", api_key=""):
+        self.mode = mode
+        """remote=服务器远程验证；auto=自动优先并回退远程；capzy=仅自动打码"""
+        self.provider = provider
+        """自动打码服务商：capzy / 2captcha / capsolver"""
+        self.api_key = api_key
+        """自动打码 API Key"""
+
+
+class Schedule:
+    """每日定时运行配置"""
+
+    def __init__(self, enabled=False, time="09:00"):
+        self.enabled = enabled
+        self.time = time
+        """Asia/Shanghai 时区的 HH:MM"""
+
+
 class Config:
     """插件数据"""
 
-    def __init__(self, preference=None, accounts=None, onepush=None):
+    def __init__(
+        self,
+        preference=None,
+        accounts=None,
+        onepush=None,
+        captcha=None,
+        schedule=None,
+    ):
         self.preference = preference or Preference()
         self.accounts = accounts or [Account()]
         self.ONEPUSH = onepush or OnePush()
+        self.CAPTCHA = captcha or Captcha()
+        self.SCHEDULE = schedule or Schedule()
 
     def to_dict(self):
         """将 Config 转换为字典"""
@@ -201,6 +232,8 @@ class Config:
             "preference": vars(self.preference),
             "accounts": [vars(account) for account in self.accounts],
             "ONEPUSH": vars(self.ONEPUSH),
+            "CAPTCHA": vars(self.CAPTCHA),
+            "SCHEDULE": vars(self.SCHEDULE),
         }
 
     @classmethod
@@ -209,7 +242,9 @@ class Config:
         preference = Preference(**data.get("preference", {}))
         accounts = [Account(**account) for account in data.get("accounts", [])]
         onepush = OnePush(**data.get("ONEPUSH", {}))
-        return cls(preference, accounts, onepush)
+        captcha = Captcha(**(data.get("CAPTCHA") or {}))
+        schedule = Schedule(**(data.get("SCHEDULE") or {}))
+        return cls(preference, accounts, onepush, captcha, schedule)
 
 
 class ConfigManager:

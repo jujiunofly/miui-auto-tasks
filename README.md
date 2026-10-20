@@ -45,7 +45,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-不配置定时任务，打开面板后点击“立即运行”即可。
+默认不自动运行；打开面板点“立即运行”，或在设置里开启每日定时。
 
 ### **服务器 / 手机验证码**：
 Docker 容器没有桌面浏览器，服务器用后台 Chromium 打开小米验证页并把画面实时转发到面板。出现验证码时：
@@ -73,30 +73,18 @@ playwright install chromium
 ```
 
 ### **可选：服务器全自动打码**：
-如果连验证码弹窗都不想点，可以配置服务器端付费打码。配置后验证码由服务器自动完成，手机只需点“立即运行”。
+如果连验证码弹窗都不想点，可以在面板“设置 -> 验证码与定时运行”里选择“自动”，并填写服务商 API Key。支持 Capzy、2Captcha、CapSolver。配置后验证码由服务器自动完成，手机只需点“立即运行”。
 
-在 `.env` 中增加：
-
-```env
-CAPTCHA_PROVIDER=2captcha
-CAPTCHA_API_KEY=你的API_KEY
-```
-
-也支持 `CAPTCHA_PROVIDER=capsolver`。然后重建容器：
-
-```shell
-docker compose up -d --force-recreate
-```
-
-面板设置里显示“验证码方式：自动打码 (2captcha/capsolver)”即生效。自动打码覆盖极验和 Google reCAPTCHA；失败时会自动回退到网页助手/手机脚本/手动提交。
-
-常用服务：
+- Capzy：https://capzy.ai
 - 2Captcha：https://2captcha.com
 - CapSolver：https://www.capsolver.com
 
-打码按次收费，通常单次几厘到几分钱，具体价格以服务商为准。
+自动打码覆盖极验和 Google reCAPTCHA；选择“自动”时失败会回退到服务器远程验证，“仅自动打码”模式不会弹远程。打码按次收费，具体价格以服务商为准。
 
-首次构建会下载基础镜像和依赖，可能持续几分钟。`docker compose up -d` 默认不显示构建进度，建议先单独构建：
+### **每日定时运行**：
+面板“设置 -> 验证码与定时运行”里可以开启每日定时，并设置 `HH:MM`（Asia/Shanghai 时区）。保存后服务器进程内会按这个时间自动运行一次；即使不打开面板也会执行。
+
+首次构建会下载基础镜像、Playwright 和 Chromium，可能持续几分钟，镜像也会变大。`docker compose up -d` 默认不显示构建进度，建议先单独构建：
 
 ```shell
 docker compose build --progress=plain

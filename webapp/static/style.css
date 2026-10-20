@@ -462,6 +462,7 @@ textarea:focus { border-color: rgba(255, 106, 61, 0.55); }
 .field { display: grid; gap: 6px; }
 .field.full { grid-column: 1 / -1; }
 .field label { color: var(--muted); font-size: 12px; }
+.field select,
 .field input,
 .field textarea {
   width: 100%;
@@ -472,6 +473,7 @@ textarea:focus { border-color: rgba(255, 106, 61, 0.55); }
   background: #0b1320;
   outline: none;
 }
+.field select:focus,
 .field input:focus,
 .field textarea:focus { border-color: rgba(255, 106, 61, 0.55); }
 .field textarea { min-height: 82px; resize: vertical; }

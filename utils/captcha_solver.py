@@ -21,22 +21,57 @@ _PROVIDERS = {
         "geetest_type": "GeeTestTaskProxyLess",
         "recaptcha_type": "ReCaptchaV2EnterpriseTaskProxyLess",
     },
+    "capzy": {
+        "create": "https://api.capzy.ai/createTask",
+        "result": "https://api.capzy.ai/getTaskResult",
+        "geetest_type": "GeeTestTaskProxyLess",
+        "recaptcha_type": "ReCaptchaV2EnterpriseTaskProxyLess",
+    },
 }
+
+
+def _captcha_conf():
+    try:
+        from .config import ConfigManager
+
+        return getattr(ConfigManager.data_obj, "CAPTCHA", None)
+    except Exception:
+        return None
+
+
+def mode() -> str:
+    """返回验证码模式：remote / auto / capzy。"""
+    conf = _captcha_conf()
+    if conf and getattr(conf, "mode", ""):
+        return str(conf.mode).strip().lower()
+    return "remote"
 
 
 def provider() -> str:
     """返回当前打码服务名称。"""
+    conf = _captcha_conf()
+    if conf and getattr(conf, "provider", ""):
+        return str(conf.provider).strip().lower()
     return os.getenv("CAPTCHA_PROVIDER", "").strip().lower()
 
 
 def api_key() -> str:
     """返回打码服务 API Key。"""
+    conf = _captcha_conf()
+    if conf and getattr(conf, "api_key", ""):
+        return str(conf.api_key).strip()
     return os.getenv("CAPTCHA_API_KEY", "").strip()
 
 
 def is_configured() -> bool:
     """是否已配置可用的自动打码服务。"""
-    return provider() in _PROVIDERS and bool(api_key())
+    if provider() not in _PROVIDERS or not api_key():
+        return False
+    conf = _captcha_conf()
+    if conf:
+        current_mode = str(getattr(conf, "mode", "remote")).strip().lower()
+        return current_mode in {"auto", "capzy"}
+    return True
 
 
 def _post_json(url: str, payload: dict) -> Optional[dict]:

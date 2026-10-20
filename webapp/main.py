@@ -3,6 +3,7 @@
 import json
 import os
 import platform
+import re
 import secrets
 from html import escape
 from pathlib import Path
@@ -25,6 +26,7 @@ from utils.config import ConfigManager
 from utils.logger import LogCenter, log
 
 from .runner import runner
+from .scheduler import start as start_scheduler
 
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR.parent / ".env")
@@ -51,10 +53,10 @@ if CAPTCHA_BROKER_ENABLED:
 
 def _captcha_mode() -> str:
     """返回面板展示的验证码处理方式。"""
-    if remote_captcha.enabled():
-        return "remote"
     if captcha_solver_configured():
         return f"auto:{captcha_provider()}"
+    if remote_captcha.enabled():
+        return "remote"
     return "web" if CAPTCHA_BROKER_ENABLED else "browser"
 
 TASK_FIELDS = [
@@ -93,6 +95,7 @@ app.wsgi_app = ProxyFix(
     x_host=1,
     x_port=1,
 )
+start_scheduler()
 
 
 @app.before_request
@@ -194,6 +197,15 @@ def _settings_payload():
             "has_token": bool(params.get("token")),
         },
         "captcha_mode": _captcha_mode(),
+        "captcha": {
+            "mode": _conf.CAPTCHA.mode,
+            "provider": _conf.CAPTCHA.provider,
+            "has_api_key": bool(_conf.CAPTCHA.api_key),
+        },
+        "schedule": {
+            "enabled": bool(_conf.SCHEDULE.enabled),
+            "time": _conf.SCHEDULE.time,
+        },
     }
 
 
@@ -657,7 +669,11 @@ def update_settings():
     data = request.get_json(silent=True) or {}
     accounts = data.get("accounts") or []
     onepush = data.get("onepush") or {}
+    captcha = data.get("captcha") or {}
+    schedule = data.get("schedule") or {}
     if not isinstance(accounts, list) or not isinstance(onepush, dict):
+        return jsonify({"detail": "设置格式错误"}), 400
+    if not isinstance(captcha, dict) or not isinstance(schedule, dict):
         return jsonify({"detail": "设置格式错误"}), 400
 
     for item in accounts:
@@ -684,6 +700,31 @@ def update_settings():
             account.device = str(item["device"]).strip()
         if item.get("device_model") is not None:
             account.device_model = str(item["device_model"]).strip()
+
+    if captcha:
+        mode = str(captcha.get("mode") or "").strip().lower()
+        provider = str(captcha.get("provider") or "").strip().lower()
+        if mode and mode not in {"remote", "auto", "capzy"}:
+            return jsonify({"detail": "验证码模式无效"}), 400
+        if provider and provider not in {"capzy", "2captcha", "capsolver"}:
+            return jsonify({"detail": "打码服务商无效"}), 400
+        if mode:
+            _conf.CAPTCHA.mode = mode
+        if provider:
+            if provider != _conf.CAPTCHA.provider and not captcha.get("api_key"):
+                _conf.CAPTCHA.api_key = ""
+            _conf.CAPTCHA.provider = provider
+        if captcha.get("api_key"):
+            _conf.CAPTCHA.api_key = str(captcha["api_key"]).strip()
+
+    if schedule:
+        time_value = str(schedule.get("time") or "").strip()
+        if time_value and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", time_value):
+            return jsonify({"detail": "定时时间格式应为 HH:MM"}), 400
+        if "enabled" in schedule:
+            _conf.SCHEDULE.enabled = bool(schedule["enabled"])
+        if time_value:
+            _conf.SCHEDULE.time = time_value
 
     if onepush:
         params = _conf.ONEPUSH.params or {}

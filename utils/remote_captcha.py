@@ -20,12 +20,17 @@ _current = None
 
 def enabled() -> bool:
     """是否启用服务器端远程验证码。"""
-    return os.getenv("CAPTCHA_REMOTE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    try:
+        from .config import ConfigManager
+
+        captcha = getattr(ConfigManager.data_obj, "CAPTCHA", None)
+        mode = str(getattr(captcha, "mode", "")).strip().lower()
+        if mode:
+            return mode in {"remote", "auto"}
+    except Exception:
+        pass
+    env_value = os.getenv("CAPTCHA_REMOTE", "").strip().lower()
+    return env_value in {"1", "true", "yes", "on"}
 
 
 def _extract_status_token(url: str) -> str:

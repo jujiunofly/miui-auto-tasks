@@ -203,6 +203,33 @@ function createField(labelText, value, options = {}) {
   return wrapper;
 }
 
+function createSelectField(labelText, value, options, field, hint) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "field";
+  const id = `setting-${Math.random().toString(36).slice(2)}`;
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  label.htmlFor = id;
+  const select = document.createElement("select");
+  select.id = id;
+  select.dataset.field = field;
+  options.forEach((option) => {
+    const node = document.createElement("option");
+    node.value = option.value;
+    node.textContent = option.label;
+    if (option.value === value) node.selected = true;
+    select.appendChild(node);
+  });
+  wrapper.append(label, select);
+  if (hint) {
+    const note = document.createElement("span");
+    note.className = "hint";
+    note.textContent = hint;
+    wrapper.appendChild(note);
+  }
+  return wrapper;
+}
+
 function createCheckboxField(labelText, checked, field) {
   const wrapper = document.createElement("label");
   wrapper.className = "checkline";
@@ -223,8 +250,65 @@ function renderSettings(data) {
 
   const note = document.createElement("div");
   note.className = "settings-note";
-  note.textContent = `验证码方式：${captchaModeText(data.captcha_mode)}。修改账号资料后，下次运行生效。`;
+  note.textContent = `验证码方式：${captchaModeText(data.captcha_mode)}。验证码和定时设置保存后生效；账号资料下次运行生效。`;
   root.appendChild(note);
+
+  const captchaSection = document.createElement("div");
+  captchaSection.className = "settings-section";
+  const captchaTitle = document.createElement("h3");
+  captchaTitle.textContent = "验证码与定时运行";
+  captchaSection.appendChild(captchaTitle);
+  const captchaGrid = document.createElement("div");
+  captchaGrid.className = "settings-grid";
+  captchaGrid.append(
+    createSelectField(
+      "验证码方式",
+      data.captcha?.mode || "remote",
+      [
+        { value: "remote", label: "服务器远程验证（弹窗手动点）" },
+        { value: "auto", label: "自动（服务商优先，失败回退远程）" },
+        { value: "capzy", label: "仅自动打码（不弹远程）" },
+      ],
+      "captcha_mode",
+    ),
+    createSelectField(
+      "自动打码服务商",
+      data.captcha?.provider || "capzy",
+      [
+        { value: "capzy", label: "Capzy" },
+        { value: "2captcha", label: "2Captcha" },
+        { value: "capsolver", label: "CapSolver" },
+      ],
+      "captcha_provider",
+    ),
+    createField("打码 API Key", "", {
+      field: "captcha_api_key",
+      type: "password",
+      full: true,
+      placeholder: data.captcha?.has_api_key
+        ? "已设置，留空保持现有"
+        : "填写服务商 API Key",
+      hint: "自动模式下使用；密钥只保存在服务器的 data/config.yaml。切换服务商后需要重新填写。",
+    }),
+    createField("每天运行时间", data.schedule?.time || "09:00", {
+      field: "schedule_time",
+      type: "time",
+      hint: "Asia/Shanghai 时区，格式 HH:MM。",
+    }),
+  );
+  captchaSection.appendChild(captchaGrid);
+  captchaSection.appendChild(
+    createCheckboxField(
+      "启用每天定时运行",
+      Boolean(data.schedule?.enabled),
+      "schedule_enabled",
+    ),
+  );
+  const scheduleNote = document.createElement("div");
+  scheduleNote.className = "settings-note";
+  scheduleNote.textContent = "定时运行时如果遇到验证码，建议选择自动打码；服务器远程验证需要你打开面板点击。";
+  captchaSection.appendChild(scheduleNote);
+  root.appendChild(captchaSection);
 
   data.accounts.forEach((account) => {
     const section = document.createElement("div");
@@ -346,12 +430,24 @@ async function saveSettings() {
   const token = $("settingsContent").querySelector('[data-field="onepush_token"]')?.value || "";
   if (token) onepush.token = token;
 
+  const captcha = {
+    mode: $("settingsContent").querySelector('[data-field="captcha_mode"]')?.value || "remote",
+    provider: $("settingsContent").querySelector('[data-field="captcha_provider"]')?.value || "capzy",
+  };
+  const captchaKey = $("settingsContent").querySelector('[data-field="captcha_api_key"]')?.value || "";
+  if (captchaKey) captcha.api_key = captchaKey;
+
+  const schedule = {
+    enabled: Boolean($("settingsContent").querySelector('[data-field="schedule_enabled"]')?.checked),
+    time: $("settingsContent").querySelector('[data-field="schedule_time"]')?.value || "09:00",
+  };
+
   const button = $("settingsSave");
   button.disabled = true;
   try {
     const data = await api("/api/settings", {
       method: "PATCH",
-      body: JSON.stringify({ accounts, onepush }),
+      body: JSON.stringify({ accounts, onepush, captcha, schedule }),
     });
     state.settingsData = data;
     state.accountsKey = "";
