@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MIUI Auto Tasks</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=10">
+  <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
   <div class="app-shell">
@@ -117,7 +117,8 @@
       </ol>
       <details class="captcha-fallback">
         <summary>其他方式（电脑助手 / 手动提交）</summary>
-        <p class="muted">电脑端可以运行助手自动回传；也可以手动打开原验证页，完成后把地址栏 URL 或 <code>flag</code> 粘贴到下面。</p>
+        <p class="muted">电脑端可以运行助手自动回传；也可以手动打开原验证页，完成后把地址栏 URL 或 <code>flag</code> 粘贴到下面。如果是 Google reCAPTCHA，先安装手机自动回传脚本再打开原验证页。</p>
+        <a id="captchaUserscriptFallback" class="captcha-alt-link" href="/captcha-userscript.user.js" target="_blank" rel="noopener">安装手机自动回传脚本（Google 验证码需要）</a>
         <div class="captcha-command">
           <code id="captchaCommand">python captcha_helper.py --server http://127.0.0.1:8000</code>
           <button id="captchaCopy" class="btn ghost small" type="button">复制命令</button>
@@ -155,6 +156,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=11"></script>
 </body>
 </html>
