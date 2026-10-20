@@ -203,10 +203,20 @@ class Captcha:
 class Schedule:
     """每日定时运行配置"""
 
-    def __init__(self, enabled=False, time="09:00"):
+    def __init__(
+        self,
+        enabled=False,
+        start_time="09:00",
+        end_time="11:00",
+        time="",
+    ):
+        if time and start_time == "09:00" and end_time == "11:00":
+            start_time = time
+            end_time = time
         self.enabled = enabled
-        self.time = time
-        """Asia/Shanghai 时区的 HH:MM"""
+        self.start_time = start_time
+        self.end_time = end_time
+        """Asia/Shanghai 时区的 HH:MM 范围，每天在范围内随机运行一次"""
 
 
 class Config:

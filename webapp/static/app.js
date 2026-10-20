@@ -290,10 +290,14 @@ function renderSettings(data) {
         : "填写服务商 API Key",
       hint: "自动模式下使用；密钥只保存在服务器的 data/config.yaml。切换服务商后需要重新填写。",
     }),
-    createField("每天运行时间", data.schedule?.time || "09:00", {
-      field: "schedule_time",
+    createField("开始时间", data.schedule?.start_time || "09:00", {
+      field: "schedule_start",
       type: "time",
-      hint: "Asia/Shanghai 时区，格式 HH:MM。",
+      hint: "每天在开始和结束时间之间随机选一个时间运行一次（Asia/Shanghai，结束需晚于开始）。",
+    }),
+    createField("结束时间", data.schedule?.end_time || "11:00", {
+      field: "schedule_end",
+      type: "time",
     }),
   );
   captchaSection.appendChild(captchaGrid);
@@ -439,7 +443,8 @@ async function saveSettings() {
 
   const schedule = {
     enabled: Boolean($("settingsContent").querySelector('[data-field="schedule_enabled"]')?.checked),
-    time: $("settingsContent").querySelector('[data-field="schedule_time"]')?.value || "09:00",
+    start_time: $("settingsContent").querySelector('[data-field="schedule_start"]')?.value || "09:00",
+    end_time: $("settingsContent").querySelector('[data-field="schedule_end"]')?.value || "11:00",
   };
 
   const button = $("settingsSave");

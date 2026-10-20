@@ -204,7 +204,8 @@ def _settings_payload():
         },
         "schedule": {
             "enabled": bool(_conf.SCHEDULE.enabled),
-            "time": _conf.SCHEDULE.time,
+            "start_time": _conf.SCHEDULE.start_time,
+            "end_time": _conf.SCHEDULE.end_time,
         },
     }
 
@@ -718,13 +719,26 @@ def update_settings():
             _conf.CAPTCHA.api_key = str(captcha["api_key"]).strip()
 
     if schedule:
-        time_value = str(schedule.get("time") or "").strip()
-        if time_value and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", time_value):
-            return jsonify({"detail": "定时时间格式应为 HH:MM"}), 400
+        start_time = str(schedule.get("start_time") or "").strip()
+        end_time = str(schedule.get("end_time") or "").strip()
+        legacy_time = str(schedule.get("time") or "").strip()
+        if legacy_time and not start_time and not end_time:
+            start_time = end_time = legacy_time
+        time_pattern = r"([01]\d|2[0-3]):[0-5]\d"
+        if start_time and not re.fullmatch(time_pattern, start_time):
+            return jsonify({"detail": "开始时间格式应为 HH:MM"}), 400
+        if end_time and not re.fullmatch(time_pattern, end_time):
+            return jsonify({"detail": "结束时间格式应为 HH:MM"}), 400
+        new_start = start_time or _conf.SCHEDULE.start_time
+        new_end = end_time or _conf.SCHEDULE.end_time
+        if new_start > new_end:
+            return jsonify({"detail": "结束时间不能早于开始时间"}), 400
         if "enabled" in schedule:
             _conf.SCHEDULE.enabled = bool(schedule["enabled"])
-        if time_value:
-            _conf.SCHEDULE.time = time_value
+        if start_time:
+            _conf.SCHEDULE.start_time = start_time
+        if end_time:
+            _conf.SCHEDULE.end_time = end_time
 
     if onepush:
         params = _conf.ONEPUSH.params or {}
