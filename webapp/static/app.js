@@ -417,13 +417,42 @@ function addLogs(logs) {
   renderLogs();
 }
 
+function buildRelayUrl(item) {
+  if (!item?.url || !item?.relay_token) return item?.url || "";
+  const source = new URL(item.url);
+  const params = new URLSearchParams(source.search);
+  params.set("id", item.id);
+  params.set("relay_token", item.relay_token);
+  return `${location.origin}/v2/html/check.html?${params.toString()}`;
+}
+
 function openCaptchaModal() {
   if (!state.pendingCaptcha) return;
   $("captchaCommand").textContent = `python captcha_helper.py --server ${location.origin}`;
   $("captchaLink").href = state.pendingCaptcha.url;
-  $("captchaStatus").textContent = "等待本机助手连接...";
+  $("captchaRelayLink").href = buildRelayUrl(state.pendingCaptcha);
+  $("captchaStatus").textContent = "等待验证...";
   $("captchaValue").value = "";
   $("captchaModal").classList.remove("hidden");
+}
+
+function openCaptchaWindow() {
+  if (!state.pendingCaptcha) return;
+  const url = buildRelayUrl(state.pendingCaptcha);
+  if (!url) {
+    toast("验证链接无效，请重试", "error");
+    return;
+  }
+  const popup = window.open(
+    url,
+    "miui-captcha-verify",
+    "popup=yes,width=520,height=760",
+  );
+  if (!popup) {
+    toast("浏览器拦截了弹窗，请允许弹窗后重试", "error");
+    return;
+  }
+  $("captchaStatus").textContent = "验证完成后会自动返回...";
 }
 
 async function copyCaptchaCommand() {
@@ -463,7 +492,6 @@ function syncCaptcha(pending) {
   if (item.id !== state.captchaSubmittedId && item.id !== state.captchaDismissedId) {
     const modalHidden = $("captchaModal").classList.contains("hidden");
     if (modalHidden) openCaptchaModal();
-    else $("captchaStatus").textContent = "等待本机助手连接...";
   }
 }
 
@@ -547,6 +575,7 @@ $("autoScroll").addEventListener("change", (event) => {
   state.autoScroll = event.target.checked;
 });
 $("captchaBtn").addEventListener("click", openCaptchaModal);
+$("captchaOpen").addEventListener("click", openCaptchaWindow);
 $("captchaCopy").addEventListener("click", copyCaptchaCommand);
 $("captchaClose").addEventListener("click", closeCaptchaModal);
 $("captchaLater").addEventListener("click", closeCaptchaModal);
@@ -556,6 +585,21 @@ $("captchaModal").addEventListener("click", (event) => {
 });
 $("settingsModal").addEventListener("click", (event) => {
   if (event.target === $("settingsModal")) closeSettings();
+});
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin) return;
+  const data = event.data || {};
+  if (data.type !== "captcha-complete") return;
+  if (data.ok) {
+    $("captchaStatus").textContent = "验证成功，正在继续...";
+    setTimeout(() => {
+      if (state.pendingCaptcha) state.captchaDismissedId = "";
+      closeCaptchaModal();
+    }, 700);
+  } else {
+    $("captchaStatus").textContent = "验证未完成，请重试";
+  }
 });
 
 poll();

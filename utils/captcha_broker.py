@@ -4,6 +4,7 @@ CLI 模式不启用，仍然使用 Playwright 打开本机浏览器。
 Web 模式启用后，任务线程会等待前端提交验证码最终 token。
 """
 
+import secrets
 import threading
 import time
 import uuid
@@ -65,6 +66,7 @@ def request_token(url: str, timeout: int = 300):
         _pending[request_id] = {
             "id": request_id,
             "url": url,
+            "relay_token": secrets.token_urlsafe(24),
             "created": time.time(),
             "expires": time.time() + timeout,
         }
@@ -85,6 +87,27 @@ def pending():
             {**item, "expires_in": max(0, int(item["expires"] - now))}
             for item in _pending.values()
         ]
+
+
+def get(request_id: str):
+    """获取单个等待处理的验证码请求。"""
+    now = time.time()
+    with _lock:
+        item = _pending.get(request_id)
+        if not item:
+            return None
+        return {**item, "expires_in": max(0, int(item["expires"] - now))}
+
+
+def submit_relay(request_id: str, relay_token: str, value: str) -> bool:
+    """验证中转页的一次性 token 后提交验证码。"""
+    with _lock:
+        item = _pending.get(request_id)
+        if not item:
+            return False
+        if not secrets.compare_digest(item.get("relay_token", ""), relay_token or ""):
+            return False
+    return submit(request_id, value)
 
 
 def submit(request_id: str, value: str) -> bool:

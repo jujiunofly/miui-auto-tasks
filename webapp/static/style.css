@@ -369,6 +369,14 @@ select {
   margin-bottom: 12px;
 }
 .captcha-actions .muted { font-size: 12px; }
+.captcha-alt-link {
+  display: inline-block;
+  margin: 2px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .captcha-steps {
   margin: 0;
   padding-left: 20px;
