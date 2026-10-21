@@ -120,8 +120,7 @@ class TokenResultHandler(ApiResultHandler):
     """
     def __init__(self, content: Dict[str, Any]):
         super().__init__(content=content)
-        # reCAPTCHA 返回 token，极验/图片验证返回 content。
-        self.token = self.data.get("token") or self.data.get("content") or ""
+        self.token = self.data.get("token", "")
 
     @property
     def need_verify(self):

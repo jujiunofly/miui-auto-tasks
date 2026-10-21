@@ -60,10 +60,7 @@ def main(auto_notify: bool = True):
                                 log.info(f"任务{task.name}被禁用")
                                 continue
                             token = (
-                                get_token(
-                                    cookies["cUserId"],
-                                    user_agent=account.user_agent,
-                                )
+                                get_token(cookies["cUserId"])
                                 if task_obj == CheckIn
                                 else None
                             )
