@@ -55,6 +55,8 @@ Compose 默认限制为 1 CPU、512MB 内存。首次构建只需要安装 Pytho
 
 如果服务商提示 `reCAPTCHA's audio challenge was blocked by Google on this exit IP`，说明服务商默认出口 IP 被 Google 封了。填写一个能访问 Google 的代理后，打码器会自动切换到带代理的任务类型。
 
+代理只作为 `proxyAddress` 传给打码服务商，用于访问验证码页面，不会代理本应用的其他请求。
+
 ## 每日定时运行
 
 在“设置 -> 自动打码与定时运行”里开启定时，并设置开始/结束时间（Asia/Shanghai）。服务器每天会在该范围内随机选择一个时间运行一次；重启不会重复跑当天。

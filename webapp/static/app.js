@@ -236,6 +236,13 @@ function createCheckboxField(labelText, checked, field) {
   return wrapper;
 }
 
+function createFieldRow(fields) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "field-row";
+  fields.forEach((field) => wrapper.appendChild(field));
+  return wrapper;
+}
+
 function renderSettings(data) {
   state.settingsData = data;
   const root = $("settingsContent");
@@ -298,23 +305,28 @@ function renderSettings(data) {
     createField("代理密码（可选）", "", {
       field: "captcha_proxy_password",
       type: "password",
+      full: true,
       placeholder: data.captcha?.has_proxy_password
         ? "已设置，留空保持现有"
         : "未设置",
     }),
-    createField("开始时间", data.schedule?.start_time || "09:00", {
-      field: "schedule_start",
-      type: "time",
-    }),
-    createField("结束时间", data.schedule?.end_time || "11:00", {
-      field: "schedule_end",
-      type: "time",
-    }),
+  );
+  captchaGrid.appendChild(
+    createFieldRow([
+      createField("开始时间", data.schedule?.start_time || "09:00", {
+        field: "schedule_start",
+        type: "time",
+      }),
+      createField("结束时间", data.schedule?.end_time || "11:00", {
+        field: "schedule_end",
+        type: "time",
+      }),
+    ]),
   );
   captchaSection.appendChild(captchaGrid);
   const proxyHint = document.createElement("div");
   proxyHint.className = "settings-note";
-  proxyHint.textContent = "代理是可选项。打码服务提示出口 IP 被封时，填写能访问 Google 的代理；地址和端口必须同时填写。";
+  proxyHint.textContent = "代理是可选项，只用于自动打码服务访问验证码页面，不会代理整个应用。打码服务提示出口 IP 被封时再填写；地址和端口必须同时填写。";
   captchaSection.appendChild(proxyHint);
   const timeHint = document.createElement("div");
   timeHint.className = "settings-note";
