@@ -5,9 +5,7 @@ LastEditTime: 2025-02-11 00:59:19
 """
 
 import json
-import time
 from traceback import print_exc
-from urllib.parse import parse_qsl, urlparse
 
 from jsonpath_ng import parse
 from jsonpath_ng.exceptions import JsonPathParserError
@@ -18,105 +16,6 @@ from .logger import log
 from .request import request
 
 _conf = ConfigManager.data_obj
-
-
-def _extract_status_token(url: str) -> str:
-    """从小米验证成功后的状态页 URL 中提取最终 token"""
-    parsed = urlparse(url)
-    if not parsed.path.endswith("/captcha/status"):
-        return ""
-    params = dict(parse_qsl(parsed.query))
-    if params.get("code") != "0":
-        return ""
-    return params.get("flag", "")
-
-
-def solve_recaptcha_manual(
-    url: str, timeout: int = 180, headless: bool = False
-) -> str:
-    """打开浏览器，由用户手动完成 reCAPTCHA，并返回小米最终 token"""
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        log.error("未安装 playwright，无法进行人工验证。请执行: pip install playwright")
-        return ""
-
-    pending_tokens = []
-    browser = None
-    try:
-        with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(
-                    channel="chrome",
-                    headless=headless,
-                    args=["--disable-blink-features=AutomationControlled"],
-                )
-            except Exception:
-                log.warning("未检测到本机 Chrome，尝试使用 Playwright Chromium")
-                try:
-                    browser = playwright.chromium.launch(
-                        headless=headless,
-                        args=["--disable-blink-features=AutomationControlled"],
-                    )
-                except Exception:
-                    log.error(
-                        "浏览器启动失败，请安装 Chrome 或执行: playwright install chromium"
-                    )
-                    return ""
-
-            context = browser.new_context(locale="zh-CN")
-            context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-            )
-            page = context.new_page()
-
-            def finish_status_page(route):
-                token = _extract_status_token(route.request.url)
-                if token:
-                    pending_tokens.append(token)
-                    # 小米状态页本身可能返回 404，拦截后避免 Chrome 跳到错误页。
-                    route.fulfill(
-                        status=200,
-                        content_type="text/html",
-                        body="<html><body>OK</body></html>",
-                    )
-                else:
-                    route.continue_()
-
-            page.route("**/captcha/status*", finish_status_page)
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            page.bring_to_front()
-            log.info(f"请在打开的浏览器中完成人机验证，最多等待 {timeout} 秒")
-
-            deadline = time.time() + timeout
-            while time.time() < deadline:
-                token = _extract_status_token(page.url)
-                if token:
-                    log.success("人机验证通过")
-                    return token
-                if pending_tokens:
-                    log.success("人机验证通过")
-                    return pending_tokens.pop(0)
-                try:
-                    page.wait_for_timeout(500)
-                except Exception:
-                    token = _extract_status_token(page.url)
-                    if token:
-                        log.success("人机验证通过")
-                        return token
-                    log.error(f"验证页异常，当前页面: {page.url}")
-                    return ""
-            log.error("人机验证超时或已取消")
-            return ""
-    except Exception:  # pylint: disable=broad-exception-caught
-        log.exception("人工验证流程异常")
-        return ""
-    finally:
-        if browser:
-            try:
-                browser.close()
-            except Exception:
-                pass
 
 
 def find_key(data: dict, key: str):

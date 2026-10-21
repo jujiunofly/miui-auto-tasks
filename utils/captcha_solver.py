@@ -1,4 +1,8 @@
-"""付费打码服务封装，用于服务器/手机端全自动完成验证码。"""
+"""付费打码服务封装。
+
+这个分支只保留自动打码：不启动浏览器，不等待人工输入。
+支持 Capzy / 2Captcha / CapSolver，可选传入代理解决出口 IP 被封的问题。
+"""
 
 import os
 import time
@@ -12,20 +16,38 @@ _PROVIDERS = {
     "2captcha": {
         "create": "https://api.2captcha.com/createTask",
         "result": "https://api.2captcha.com/getTaskResult",
-        "geetest_type": "GeeTestTaskProxyless",
-        "recaptcha_type": "RecaptchaV2EnterpriseTaskProxyless",
+        "geetest_type": {
+            "proxyless": "GeeTestTaskProxyless",
+            "proxy": "GeeTestTask",
+        },
+        "recaptcha_type": {
+            "proxyless": "RecaptchaV2EnterpriseTaskProxyless",
+            "proxy": "RecaptchaV2EnterpriseTask",
+        },
     },
     "capsolver": {
         "create": "https://api.capsolver.com/createTask",
         "result": "https://api.capsolver.com/getTaskResult",
-        "geetest_type": "GeeTestTaskProxyLess",
-        "recaptcha_type": "ReCaptchaV2EnterpriseTaskProxyLess",
+        "geetest_type": {
+            "proxyless": "GeeTestTaskProxyLess",
+            "proxy": "GeeTestTask",
+        },
+        "recaptcha_type": {
+            "proxyless": "ReCaptchaV2EnterpriseTaskProxyLess",
+            "proxy": "ReCaptchaV2EnterpriseTask",
+        },
     },
     "capzy": {
         "create": "https://api.capzy.ai/createTask",
         "result": "https://api.capzy.ai/getTaskResult",
-        "geetest_type": "GeeTestTaskProxyLess",
-        "recaptcha_type": "ReCaptchaV2EnterpriseTaskProxyLess",
+        "geetest_type": {
+            "proxyless": "GeeTestTaskProxyLess",
+            "proxy": "GeeTestTask",
+        },
+        "recaptcha_type": {
+            "proxyless": "ReCaptchaV2EnterpriseTaskProxyLess",
+            "proxy": "ReCaptchaV2EnterpriseTask",
+        },
     },
 }
 
@@ -37,14 +59,6 @@ def _captcha_conf():
         return getattr(ConfigManager.data_obj, "CAPTCHA", None)
     except Exception:
         return None
-
-
-def mode() -> str:
-    """返回验证码模式：remote / auto / capzy。"""
-    conf = _captcha_conf()
-    if conf and getattr(conf, "mode", ""):
-        return str(conf.mode).strip().lower()
-    return "remote"
 
 
 def provider() -> str:
@@ -65,13 +79,45 @@ def api_key() -> str:
 
 def is_configured() -> bool:
     """是否已配置可用的自动打码服务。"""
-    if provider() not in _PROVIDERS or not api_key():
-        return False
+    return provider() in _PROVIDERS and bool(api_key())
+
+
+def _proxy_payload() -> Optional[dict]:
+    """读取可选代理配置；返回 None 表示配置有误。"""
     conf = _captcha_conf()
-    if conf:
-        current_mode = str(getattr(conf, "mode", "remote")).strip().lower()
-        return current_mode in {"auto", "capzy"}
-    return True
+    if not conf:
+        return {}
+    address = str(getattr(conf, "proxy_address", "") or "").strip()
+    port = str(getattr(conf, "proxy_port", "") or "").strip()
+    if not address and not port:
+        return {}
+    if not address or not port:
+        log.error("代理配置不完整：需要同时填写代理地址和端口")
+        return None
+    try:
+        port_number = int(port)
+    except (TypeError, ValueError):
+        log.error("代理端口无效")
+        return None
+    if not 1 <= port_number <= 65535:
+        log.error("代理端口超出范围")
+        return None
+    proxy_type = str(getattr(conf, "proxy_type", "http") or "http").strip().lower()
+    if proxy_type not in {"http", "https", "socks4", "socks5"}:
+        log.error("代理类型无效，可选 http / https / socks4 / socks5")
+        return None
+    payload = {
+        "proxyType": proxy_type,
+        "proxyAddress": address,
+        "proxyPort": port_number,
+    }
+    login = str(getattr(conf, "proxy_login", "") or "").strip()
+    password = str(getattr(conf, "proxy_password", "") or "")
+    if login:
+        payload["proxyLogin"] = login
+    if password:
+        payload["proxyPassword"] = password
+    return payload
 
 
 def _post_json(url: str, payload: dict) -> Optional[dict]:
@@ -88,10 +134,21 @@ def _post_json(url: str, payload: dict) -> Optional[dict]:
         return None
 
 
-def _create_task(task: dict) -> Optional[str]:
+def _create_task(task: dict, kind: str) -> Optional[str]:
     config = _PROVIDERS.get(provider())
     if not config:
+        log.error(f"不支持的打码服务商: {provider() or '未配置'}")
         return None
+    proxy = _proxy_payload()
+    if proxy is None:
+        return None
+    task = dict(task)
+    if proxy:
+        task.update(proxy)
+        task["type"] = config[f"{kind}_type"]["proxy"]
+        log.info("自动打码使用自定义代理")
+    else:
+        task["type"] = config[f"{kind}_type"]["proxyless"]
     data = _post_json(
         config["create"],
         {"clientKey": api_key(), "task": task},
@@ -139,7 +196,7 @@ def _wait_result(task_id: str, timeout: int = 180) -> Optional[dict]:
         if status != "processing":
             log.error(f"打码服务返回未知状态: {status}")
             return None
-        time.sleep(3)
+        time.sleep(2)
     log.error("打码服务等待结果超时")
     return None
 
@@ -153,9 +210,7 @@ def solve_geetest(
     """调用付费服务完成 GeeTest v3，返回小米校验所需字段。"""
     if not is_configured():
         return None
-    config = _PROVIDERS[provider()]
     task = {
-        "type": config["geetest_type"],
         "websiteURL": page_url,
         "gt": gt,
         "challenge": challenge,
@@ -163,8 +218,8 @@ def solve_geetest(
     if user_agent:
         task["userAgent"] = user_agent
 
-    log.info(f"使用 {provider()} 自动完成验证码")
-    task_id = _create_task(task)
+    log.info(f"使用 {provider()} 自动完成极验")
+    task_id = _create_task(task, "geetest")
     if not task_id:
         return None
     solution = _wait_result(task_id)
@@ -204,15 +259,13 @@ def solve_recaptcha(
     """调用付费服务完成 reCAPTCHA Enterprise，返回 Google token。"""
     if not is_configured():
         return None
-    config = _PROVIDERS[provider()]
     task = {
-        "type": config["recaptcha_type"],
         "websiteURL": page_url,
         "websiteKey": site_key,
         "isInvisible": bool(is_invisible),
     }
     log.info(f"使用 {provider()} 自动完成 Google 验证码")
-    task_id = _create_task(task)
+    task_id = _create_task(task, "recaptcha")
     if not task_id:
         return None
     solution = _wait_result(task_id)

@@ -6,8 +6,8 @@ services:
       - .env
     ports:
       - "8000:8000"
-    environment:
-      CAPTCHA_BROKER: "1"
+    mem_limit: 512m
+    cpus: 1.0
     volumes:
       - ./data:/srv/data
       - ./logs:/srv/logs

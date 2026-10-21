@@ -189,15 +189,36 @@ class Preference:
 
 
 class Captcha:
-    """验证码配置"""
+    """自动打码配置"""
 
-    def __init__(self, mode="remote", provider="capzy", api_key=""):
+    # pylint: disable=too-many-arguments, too-many-positional-arguments
+    def __init__(
+        self,
+        mode="auto",
+        provider="capzy",
+        api_key="",
+        proxy_type="http",
+        proxy_address="",
+        proxy_port="",
+        proxy_login="",
+        proxy_password="",
+    ):
         self.mode = mode
-        """remote=服务器远程验证；auto=自动优先并回退远程；capzy=仅自动打码"""
+        """兼容旧配置；自动打码分支固定使用 auto"""
         self.provider = provider
         """自动打码服务商：capzy / 2captcha / capsolver"""
         self.api_key = api_key
         """自动打码 API Key"""
+        self.proxy_type = proxy_type
+        """可选代理类型：http / https / socks4 / socks5"""
+        self.proxy_address = proxy_address
+        """可选代理地址，留空表示不使用代理"""
+        self.proxy_port = proxy_port
+        """可选代理端口"""
+        self.proxy_login = proxy_login
+        """可选代理用户名"""
+        self.proxy_password = proxy_password
+        """可选代理密码"""
 
 
 class Schedule:

@@ -12,14 +12,8 @@ const state = {
   accountsKey: "",
   telegram: {},
   telegramKey: "",
-  captchaMode: "browser",
+  captchaMode: "unconfigured",
   settingsData: null,
-  pendingCaptcha: null,
-  captchaSubmittedId: "",
-  captchaDismissedId: "",
-  remoteCaptcha: null,
-  remoteWidth: 390,
-  remoteHeight: 844,
   toastTimer: null,
 };
 
@@ -62,9 +56,8 @@ function statusText(status) {
 }
 
 function captchaModeText(mode) {
-  if (mode === "remote") return "服务器远程验证";
   if (mode?.startsWith("auto:")) return `自动打码 (${mode.split(":")[1]})`;
-  return mode === "web" ? "网页自动回传" : "本机浏览器自动捕获";
+  return "未配置自动打码";
 }
 
 function setStatus(running, lastRun) {
@@ -250,29 +243,19 @@ function renderSettings(data) {
 
   const note = document.createElement("div");
   note.className = "settings-note";
-  note.textContent = `验证码方式：${captchaModeText(data.captcha_mode)}。验证码和定时设置保存后生效；账号资料下次运行生效。`;
+  note.textContent = `验证码方式：${captchaModeText(data.captcha_mode)}。自动打码失败会跳过签到；验证码和定时设置保存后生效，账号资料下次运行生效。`;
   root.appendChild(note);
 
   const captchaSection = document.createElement("div");
   captchaSection.className = "settings-section";
   const captchaTitle = document.createElement("h3");
-  captchaTitle.textContent = "验证码与定时运行";
+  captchaTitle.textContent = "自动打码与定时运行";
   captchaSection.appendChild(captchaTitle);
   const captchaGrid = document.createElement("div");
   captchaGrid.className = "settings-grid";
   captchaGrid.append(
     createSelectField(
-      "验证码方式",
-      data.captcha?.mode || "remote",
-      [
-        { value: "remote", label: "服务器远程验证（弹窗手动点）" },
-        { value: "auto", label: "自动（服务商优先，失败回退远程）" },
-        { value: "capzy", label: "仅自动打码（不弹远程）" },
-      ],
-      "captcha_mode",
-    ),
-    createSelectField(
-      "自动打码服务商",
+      "打码服务商",
       data.captcha?.provider || "capzy",
       [
         { value: "capzy", label: "Capzy" },
@@ -288,7 +271,36 @@ function renderSettings(data) {
       placeholder: data.captcha?.has_api_key
         ? "已设置，留空保持现有"
         : "填写服务商 API Key",
-      hint: "自动模式下使用；密钥只保存在服务器的 data/config.yaml。切换服务商后需要重新填写。",
+      hint: "密钥只保存在服务器的 data/config.yaml。切换服务商后需要重新填写。",
+    }),
+    createSelectField(
+      "代理类型（可选）",
+      data.captcha?.proxy_type || "http",
+      [
+        { value: "http", label: "HTTP" },
+        { value: "https", label: "HTTPS" },
+        { value: "socks4", label: "SOCKS4" },
+        { value: "socks5", label: "SOCKS5" },
+      ],
+      "captcha_proxy_type",
+    ),
+    createField("代理地址（可选）", data.captcha?.proxy_address || "", {
+      field: "captcha_proxy_address",
+      placeholder: "例如 127.0.0.1",
+    }),
+    createField("代理端口（可选）", data.captcha?.proxy_port || "", {
+      field: "captcha_proxy_port",
+      placeholder: "例如 7890",
+    }),
+    createField("代理用户名（可选）", data.captcha?.proxy_login || "", {
+      field: "captcha_proxy_login",
+    }),
+    createField("代理密码（可选）", "", {
+      field: "captcha_proxy_password",
+      type: "password",
+      placeholder: data.captcha?.has_proxy_password
+        ? "已设置，留空保持现有"
+        : "未设置",
     }),
     createField("开始时间", data.schedule?.start_time || "09:00", {
       field: "schedule_start",
@@ -300,6 +312,10 @@ function renderSettings(data) {
     }),
   );
   captchaSection.appendChild(captchaGrid);
+  const proxyHint = document.createElement("div");
+  proxyHint.className = "settings-note";
+  proxyHint.textContent = "代理是可选项。打码服务提示出口 IP 被封时，填写能访问 Google 的代理；地址和端口必须同时填写。";
+  captchaSection.appendChild(proxyHint);
   const timeHint = document.createElement("div");
   timeHint.className = "settings-note";
   timeHint.textContent = "每天在开始和结束时间之间随机选一个时间运行一次（Asia/Shanghai，结束需晚于开始）。";
@@ -313,7 +329,7 @@ function renderSettings(data) {
   );
   const scheduleNote = document.createElement("div");
   scheduleNote.className = "settings-note";
-  scheduleNote.textContent = "定时运行时如果遇到验证码，建议选择自动打码；服务器远程验证需要你打开面板点击。";
+  scheduleNote.textContent = "此分支不弹人工验证窗口；未配置打码服务或打码失败时会跳过每日签到。";
   captchaSection.appendChild(scheduleNote);
   root.appendChild(captchaSection);
 
@@ -428,26 +444,32 @@ async function saveSettings() {
     accounts.push(item);
   });
 
+  const field = (name) => $("settingsContent").querySelector(`[data-field="${name}"]`);
   const onepush = {
-    notifier: $("settingsContent").querySelector('[data-field="onepush_notifier"]')?.value || "",
-    title: $("settingsContent").querySelector('[data-field="onepush_title"]')?.value || "",
-    userid: $("settingsContent").querySelector('[data-field="onepush_userid"]')?.value || "",
-    markdown: Boolean($("settingsContent").querySelector('[data-field="onepush_markdown"]')?.checked),
+    notifier: field("onepush_notifier")?.value || "",
+    title: field("onepush_title")?.value || "",
+    userid: field("onepush_userid")?.value || "",
+    markdown: Boolean(field("onepush_markdown")?.checked),
   };
-  const token = $("settingsContent").querySelector('[data-field="onepush_token"]')?.value || "";
+  const token = field("onepush_token")?.value || "";
   if (token) onepush.token = token;
 
   const captcha = {
-    mode: $("settingsContent").querySelector('[data-field="captcha_mode"]')?.value || "remote",
-    provider: $("settingsContent").querySelector('[data-field="captcha_provider"]')?.value || "capzy",
+    provider: field("captcha_provider")?.value || "capzy",
+    proxy_type: field("captcha_proxy_type")?.value || "http",
+    proxy_address: field("captcha_proxy_address")?.value || "",
+    proxy_port: field("captcha_proxy_port")?.value || "",
+    proxy_login: field("captcha_proxy_login")?.value || "",
   };
-  const captchaKey = $("settingsContent").querySelector('[data-field="captcha_api_key"]')?.value || "";
+  const captchaKey = field("captcha_api_key")?.value || "";
   if (captchaKey) captcha.api_key = captchaKey;
+  const proxyPassword = field("captcha_proxy_password")?.value || "";
+  if (proxyPassword) captcha.proxy_password = proxyPassword;
 
   const schedule = {
-    enabled: Boolean($("settingsContent").querySelector('[data-field="schedule_enabled"]')?.checked),
-    start_time: $("settingsContent").querySelector('[data-field="schedule_start"]')?.value || "09:00",
-    end_time: $("settingsContent").querySelector('[data-field="schedule_end"]')?.value || "11:00",
+    enabled: Boolean(field("schedule_enabled")?.checked),
+    start_time: field("schedule_start")?.value || "09:00",
+    end_time: field("schedule_end")?.value || "11:00",
   };
 
   const button = $("settingsSave");
@@ -525,252 +547,6 @@ function addLogs(logs) {
   renderLogs();
 }
 
-function isGeetestCaptcha(item) {
-  if (!item?.url) return false;
-  const source = new URL(item.url);
-  const type = source.searchParams.get("t");
-  if (type === "4" || type === "5") return false;
-  return source.searchParams.has("c") && source.searchParams.has("l");
-}
-
-function buildRelayUrl(item) {
-  if (!item?.url || !item?.relay_token) return item?.url || "";
-  const source = new URL(item.url);
-  const params = new URLSearchParams(source.search);
-  params.set("id", item.id);
-  params.set("relay_token", item.relay_token);
-  return `${location.origin}/v2/html/check.html?${params.toString()}`;
-}
-
-function buildDirectUrl(item) {
-  if (!item?.url) return "";
-  const source = new URL(item.url);
-  if (item.id) source.searchParams.set("id", item.id);
-  if (item.relay_token) source.searchParams.set("relay_token", item.relay_token);
-  return source.toString();
-}
-
-function remoteActive() {
-  return Boolean(state.remoteCaptcha?.active);
-}
-
-function refreshRemoteScreen() {
-  if (!remoteActive()) return;
-  const img = $("captchaRemoteScreen");
-  if (img) img.src = `/api/captcha/remote/screen?t=${Date.now()}`;
-}
-
-function openRemoteModal() {
-  const remote = state.remoteCaptcha;
-  if (!remote?.active) return;
-  state.remoteWidth = remote.width || 390;
-  state.remoteHeight = remote.height || 844;
-  state.pendingCaptcha = state.pendingCaptcha || {
-    id: remote.id,
-    url: "",
-    relay_token: "",
-  };
-  $("captchaBtn").classList.remove("hidden");
-  $("captchaHint").textContent = "服务器已经打开小米验证页。直接在下面的画面上点击完成验证，完成后会自动返回。";
-  $("captchaStatus").textContent = "等待验证...";
-  $("captchaOpen").classList.add("hidden");
-  $("captchaRelayLink").classList.add("hidden");
-  $("captchaUserscript").classList.add("hidden");
-  $("captchaRemote").classList.remove("hidden");
-  $("captchaModal").classList.remove("hidden");
-  refreshRemoteScreen();
-}
-
-function syncRemote(remote) {
-  state.remoteCaptcha = remote || null;
-  if (remote?.active) {
-    $("captchaBtn").classList.remove("hidden");
-    if (remote.id !== state.captchaDismissedId) {
-      if ($("captchaModal").classList.contains("hidden")) openRemoteModal();
-      else refreshRemoteScreen();
-    } else if (!$("captchaModal").classList.contains("hidden")) {
-      refreshRemoteScreen();
-    }
-    return;
-  }
-  $("captchaRemote").classList.add("hidden");
-  $("captchaOpen").classList.remove("hidden");
-  if (state.pendingCaptcha && !state.pendingCaptcha.url) state.pendingCaptcha = null;
-  if (state.pendingCaptcha?.url) {
-    if (!$("captchaModal").classList.contains("hidden")) openCaptchaModal();
-  } else if (!$("captchaModal").classList.contains("hidden")) {
-    closeCaptchaModal();
-  }
-}
-
-async function remoteClick(event) {
-  if (!remoteActive()) return;
-  const img = $("captchaRemoteScreen");
-  const rect = img.getBoundingClientRect();
-  if (!rect.width || !rect.height) return;
-  const ratio = state.remoteWidth / state.remoteHeight;
-  let contentWidth = rect.width;
-  let contentHeight = rect.height;
-  if (rect.width / rect.height > ratio) contentWidth = rect.height * ratio;
-  else contentHeight = rect.width / ratio;
-  const offsetX = (rect.width - contentWidth) / 2;
-  const offsetY = (rect.height - contentHeight) / 2;
-  const x = ((event.clientX - rect.left - offsetX) / contentWidth) * state.remoteWidth;
-  const y = ((event.clientY - rect.top - offsetY) / contentHeight) * state.remoteHeight;
-  if (x < 0 || y < 0 || x > state.remoteWidth || y > state.remoteHeight) return;
-  try {
-    await api("/api/captcha/remote/click", {
-      method: "POST",
-      body: JSON.stringify({ x, y }),
-    });
-    $("captchaStatus").textContent = "已点击，等待画面刷新...";
-    setTimeout(refreshRemoteScreen, 500);
-  } catch (error) {
-    toast(error.message, "error");
-  }
-}
-
-async function remoteKey(key) {
-  if (!remoteActive()) return;
-  try {
-    await api("/api/captcha/remote/key", {
-      method: "POST",
-      body: JSON.stringify({ key }),
-    });
-    setTimeout(refreshRemoteScreen, 300);
-  } catch (error) {
-    toast(error.message, "error");
-  }
-}
-
-async function remoteScroll(delta) {
-  if (!remoteActive()) return;
-  try {
-    await api("/api/captcha/remote/scroll", {
-      method: "POST",
-      body: JSON.stringify({ delta }),
-    });
-    setTimeout(refreshRemoteScreen, 300);
-  } catch (error) {
-    toast(error.message, "error");
-  }
-}
-
-function openCaptchaModal() {
-  if (remoteActive()) {
-    openRemoteModal();
-    return;
-  }
-  if (!state.pendingCaptcha) return;
-  const geetest = isGeetestCaptcha(state.pendingCaptcha);
-  $("captchaCommand").textContent = `python captcha_helper.py --server ${location.origin}`;
-  $("captchaLink").href = state.pendingCaptcha.url;
-  $("captchaRelayLink").href = geetest
-    ? buildRelayUrl(state.pendingCaptcha)
-    : buildDirectUrl(state.pendingCaptcha);
-  $("captchaUserscript").classList.toggle("hidden", geetest);
-  $("captchaHint").textContent = geetest
-    ? "点击“打开验证页面”，在弹窗里完成验证。验证成功后会自动回传，面板继续执行，不需要复制粘贴。"
-    : "这次是 Google reCAPTCHA。先安装一次手机自动回传脚本，再打开验证页面；完成后会自动回传。";
-  $("captchaStatus").textContent = "等待验证...";
-  $("captchaValue").value = "";
-  $("captchaRemote").classList.add("hidden");
-  $("captchaOpen").classList.remove("hidden");
-  $("captchaModal").classList.remove("hidden");
-}
-
-function openCaptchaWindow() {
-  if (!state.pendingCaptcha) return;
-  const geetest = isGeetestCaptcha(state.pendingCaptcha);
-  const url = geetest
-    ? buildRelayUrl(state.pendingCaptcha)
-    : buildDirectUrl(state.pendingCaptcha);
-  if (!url) {
-    toast("验证链接无效，请重试", "error");
-    return;
-  }
-  const popup = window.open(
-    url,
-    "miui-captcha-verify",
-    "popup=yes,width=520,height=760",
-  );
-  if (!popup) {
-    toast("浏览器拦截了弹窗，请允许弹窗后重试", "error");
-    return;
-  }
-  $("captchaStatus").textContent = geetest
-    ? "验证完成后会自动返回..."
-    : "脚本模式下完成后会自动返回...";
-}
-
-async function copyCaptchaCommand() {
-  const text = $("captchaCommand").textContent;
-  let copied = false;
-  try {
-    await navigator.clipboard.writeText(text);
-    copied = true;
-  } catch (_) {
-    const area = document.createElement("textarea");
-    area.value = text;
-    area.style.position = "fixed";
-    area.style.opacity = "0";
-    document.body.appendChild(area);
-    area.select();
-    copied = document.execCommand("copy");
-    area.remove();
-  }
-  toast(copied ? "命令已复制" : "复制失败，请手动选择命令", copied ? "success" : "error");
-}
-
-function closeCaptchaModal() {
-  $("captchaModal").classList.add("hidden");
-  if (state.pendingCaptcha) state.captchaDismissedId = state.pendingCaptcha.id;
-}
-
-function syncCaptcha(pending) {
-  if (remoteActive()) {
-    $("captchaBtn").classList.remove("hidden");
-    return;
-  }
-  const item = pending?.[0] || null;
-  state.pendingCaptcha = item;
-  $("captchaBtn").classList.toggle("hidden", !item);
-  if (!item) {
-    state.captchaSubmittedId = "";
-    state.captchaDismissedId = "";
-    closeCaptchaModal();
-    return;
-  }
-  if (item.id !== state.captchaSubmittedId && item.id !== state.captchaDismissedId) {
-    const modalHidden = $("captchaModal").classList.contains("hidden");
-    if (modalHidden) openCaptchaModal();
-  }
-}
-
-async function submitCaptcha() {
-  if (!state.pendingCaptcha) return;
-  const value = $("captchaValue").value.trim();
-  if (!value) {
-    toast("请粘贴回调 URL 或 token", "error");
-    return;
-  }
-  const button = $("captchaSubmit");
-  button.disabled = true;
-  try {
-    await api("/api/captcha/submit", {
-      method: "POST",
-      body: JSON.stringify({ id: state.pendingCaptcha.id, value }),
-    });
-    state.captchaSubmittedId = state.pendingCaptcha.id;
-    closeCaptchaModal();
-    toast("验证码已提交，任务继续执行", "success");
-  } catch (error) {
-    toast(error.message, "error");
-  } finally {
-    button.disabled = false;
-  }
-}
-
 async function runTask() {
   const button = $("runBtn");
   button.disabled = true;
@@ -779,7 +555,6 @@ async function runTask() {
     state.entries.clear();
     state.after = 0;
     state.runId = null;
-    state.captchaSubmittedId = "";
     renderLogs();
     toast("任务已启动", "success");
   } catch (error) {
@@ -797,17 +572,14 @@ async function poll() {
       state.runId = data.run_id;
       state.entries.clear();
       state.after = 0;
-      state.captchaSubmittedId = "";
     }
     state.running = data.running;
     state.lastRun = data.last_run || {};
-    state.captchaMode = data.captcha_mode || "browser";
+    state.captchaMode = data.captcha_mode || "unconfigured";
     renderAccounts(data.accounts || []);
     renderTelegram(data.telegram || {});
     setStatus(state.running, state.lastRun);
     addLogs(data.logs || []);
-    syncRemote(data.remote_captcha || null);
-    syncCaptcha(data.captcha || []);
   } catch (error) {
     if (error.status !== 401) toast(error.message, "error");
   } finally {
@@ -827,37 +599,8 @@ $("levelFilter").addEventListener("change", (event) => {
 $("autoScroll").addEventListener("change", (event) => {
   state.autoScroll = event.target.checked;
 });
-$("captchaBtn").addEventListener("click", openCaptchaModal);
-$("captchaOpen").addEventListener("click", openCaptchaWindow);
-$("captchaRemoteScreen").addEventListener("click", remoteClick);
-$("captchaRemoteBackspace").addEventListener("click", () => remoteKey("Backspace"));
-$("captchaRemoteEnter").addEventListener("click", () => remoteKey("Enter"));
-$("captchaRemoteUp").addEventListener("click", () => remoteScroll(-500));
-$("captchaRemoteDown").addEventListener("click", () => remoteScroll(500));
-$("captchaCopy").addEventListener("click", copyCaptchaCommand);
-$("captchaClose").addEventListener("click", closeCaptchaModal);
-$("captchaLater").addEventListener("click", closeCaptchaModal);
-$("captchaSubmit").addEventListener("click", submitCaptcha);
-$("captchaModal").addEventListener("click", (event) => {
-  if (event.target === $("captchaModal")) closeCaptchaModal();
-});
 $("settingsModal").addEventListener("click", (event) => {
   if (event.target === $("settingsModal")) closeSettings();
-});
-
-window.addEventListener("message", (event) => {
-  if (event.origin !== location.origin) return;
-  const data = event.data || {};
-  if (data.type !== "captcha-complete") return;
-  if (data.ok) {
-    $("captchaStatus").textContent = "验证成功，正在继续...";
-    setTimeout(() => {
-      if (state.pendingCaptcha) state.captchaDismissedId = "";
-      closeCaptchaModal();
-    }, 700);
-  } else {
-    $("captchaStatus").textContent = "验证未完成，请重试";
-  }
 });
 
 poll();
