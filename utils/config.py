@@ -191,7 +191,8 @@ class Preference:
 class Captcha:
     """验证码配置"""
 
-    def __init__(self, mode="remote", provider="capzy", api_key=""):
+    def __init__(self, mode="remote", provider="capzy", api_key="", **kwargs):
+        # 忽略其他分支写入的扩展字段，避免切换分支后配置无法加载。
         self.mode = mode
         """remote=服务器远程验证；auto=自动优先并回退远程；capzy=仅自动打码"""
         self.provider = provider

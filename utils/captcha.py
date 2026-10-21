@@ -32,7 +32,10 @@ def _extract_status_token(url: str) -> str:
 
 
 def solve_recaptcha_manual(
-    url: str, timeout: int = 180, headless: bool = False
+    url: str,
+    timeout: int = 180,
+    headless: bool = False,
+    user_agent: str = "",
 ) -> str:
     """打开浏览器，由用户手动完成 reCAPTCHA，并返回小米最终 token"""
     try:
@@ -64,7 +67,10 @@ def solve_recaptcha_manual(
                     )
                     return ""
 
-            context = browser.new_context(locale="zh-CN")
+            context = browser.new_context(
+                locale="zh-CN",
+                user_agent=user_agent or None,
+            )
             context.add_init_script(
                 "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
             )

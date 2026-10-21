@@ -85,14 +85,14 @@ def scroll(delta: int):
         session.scroll(delta)
 
 
-def start(url: str, timeout: int = 300):
+def start(url: str, timeout: int = 300, user_agent: str = ""):
     """启动一个服务器端浏览器会话。"""
     global _current
     with _lock:
         old = _current
     if old:
         old.stop()
-    session = RemoteSession(url, timeout)
+    session = RemoteSession(url, timeout, user_agent=user_agent)
     with _lock:
         _current = session
     session.start()
@@ -102,10 +102,11 @@ def start(url: str, timeout: int = 300):
 class RemoteSession:
     """在后台线程里运行 Playwright，并接收面板的点击命令。"""
 
-    def __init__(self, url: str, timeout: int = 300):
+    def __init__(self, url: str, timeout: int = 300, user_agent: str = ""):
         self.id = uuid.uuid4().hex
         self.url = url
         self.timeout = timeout
+        self.user_agent = user_agent
         self.width = 390
         self.height = 844
         self._commands = queue.Queue()
@@ -206,6 +207,7 @@ class RemoteSession:
                 context = browser.new_context(
                     viewport={"width": self.width, "height": self.height},
                     locale="zh-CN",
+                    user_agent=self.user_agent or None,
                 )
                 context.add_init_script(
                     "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"

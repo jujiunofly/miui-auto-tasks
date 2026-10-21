@@ -21,7 +21,7 @@ from . import remote_captcha
 from .captcha_broker import is_enabled, request_token
 from .data_model import TokenResultHandler
 from .logger import log
-from .request import post
+from .request import get, post
 
 RECAPTCHA_SITE_KEY = "6LeBM0ocAAAAAEwYcFUjtxpVbs-0rnbSVXBBXmh4"
 RECAPTCHA_INVISIBLE_SITE_KEY = "6LeGW00cAAAAAG92ZOn8W3YAcy3jJifCuhy5iDvg"
@@ -97,7 +97,30 @@ def is_incorrect_return(
     )
 
 
-def get_token_by_recaptcha(url: str) -> Union[str, bool]:
+def _captcha_headers(user_agent: str = "") -> dict:
+    """使用与账号一致的 UA，避免 captcha token 与签到请求 UA 不匹配。"""
+    request_headers = dict(headers)
+    if user_agent:
+        request_headers["User-Agent"] = user_agent
+        request_headers.pop("sec-ch-ua", None)
+        request_headers.pop("sec-ch-ua-mobile", None)
+        request_headers.pop("sec-ch-ua-platform", None)
+    return request_headers
+
+
+def _captcha_verify_headers(url: str, user_agent: str = "") -> dict:
+    """模拟小米验证页发出的 JSONP 请求头。"""
+    request_headers = _captcha_headers(user_agent)
+    request_headers.pop("Content-type", None)
+    request_headers.pop("Origin", None)
+    request_headers["Referer"] = url
+    request_headers["Sec-Fetch-Dest"] = "script"
+    request_headers["Sec-Fetch-Mode"] = "no-cors"
+    request_headers["Sec-Fetch-Site"] = "same-site"
+    return request_headers
+
+
+def get_token_by_recaptcha(url: str, user_agent: str = "") -> Union[str, bool]:
     """获取 reCAPTCHA TOKEN：优先自动打码，失败后转人工。"""
     try:
         parsed = urlparse(url)
@@ -106,6 +129,7 @@ def get_token_by_recaptcha(url: str) -> Union[str, bool]:
         is_recaptcha = verify_type in {"4", "5"} or not (
             query.get("c") and query.get("l")
         )
+        request_headers = _captcha_verify_headers(url, user_agent)
         if captcha_solver_configured() and query.get("e") and is_recaptcha:
             site_key = (
                 RECAPTCHA_INVISIBLE_SITE_KEY
@@ -116,32 +140,30 @@ def get_token_by_recaptcha(url: str) -> Union[str, bool]:
                 url,
                 site_key,
                 is_invisible=verify_type == "5",
+                user_agent=user_agent,
             )
             if google_token:
                 params = {
                     "k": "3dc42a135a8d45118034d1ab68213073",
                     "locale": "zh_CN",
                     "_t": round(time.time() * 1000),
-                }
-                data = {
                     "e": query.get("e"),
                     "g": google_token,
                     "type": int(verify_type) if verify_type in {"4", "5"} else 4,
                 }
-                response = post(
+                response = get(
                     "https://verify.sec.xiaomi.com/captcha/v2/recaptcha/verify",
                     params=params,
-                    headers=headers,
-                    data=data,
+                    headers=request_headers,
                 )
                 log.debug(response.text)
                 api_data = TokenResultHandler(response.json())
                 if api_data.success:
                     return api_data.token
-                log.error("reCAPTCHA 自动校验失败，转人工验证")
+                log.error(f"reCAPTCHA 自动校验失败: {response.text}")
         if remote_captcha.enabled() and is_recaptcha:
             log.info("启动服务器远程验证码")
-            session = remote_captcha.start(url, timeout=300)
+            session = remote_captcha.start(url, timeout=300, user_agent=user_agent)
             token = session.wait()
             if token:
                 return token
@@ -154,7 +176,7 @@ def get_token_by_recaptcha(url: str) -> Union[str, bool]:
                 return broker_token
             log.error("验证码等待超时，请确认本机验证助手已运行")
             return False
-        token = solve_recaptcha_manual(url)
+        token = solve_recaptcha_manual(url, user_agent=user_agent)
         if token:
             return token
         log.error("人机验证失败，无法获取TOKEN")
@@ -164,15 +186,16 @@ def get_token_by_recaptcha(url: str) -> Union[str, bool]:
         return False
 
 
-def get_token_by_captcha(url: str) -> Union[str, bool]:
+def get_token_by_captcha(url: str, user_agent: str = "") -> Union[str, bool]:
     """通过人机验证码获取TOKEN"""
     try:
         parsed_url = urlparse(url)
         query_params = dict(parse_qsl(parsed_url.query))  # 解析URL参数
         gt = query_params.get("c", "")
         challenge = query_params.get("l", "")
+        request_headers = _captcha_verify_headers(url, user_agent)
         if not gt or not challenge:
-            return get_token_by_recaptcha(url)
+            return get_token_by_recaptcha(url, user_agent=user_agent)
         geetest_data = get_validate(gt, challenge)
         challenge_value = geetest_data.challenge or challenge
         seccode = ""
@@ -183,30 +206,26 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
                 url,
                 gt,
                 challenge,
-                headers.get("User-Agent", ""),
+                user_agent or headers.get("User-Agent", ""),
             )
             if solution:
                 challenge_value = solution["challenge"]
                 seccode = solution["seccode"]
         if not seccode:
-            return get_token_by_recaptcha(url)
+            return get_token_by_recaptcha(url, user_agent=user_agent)
         params = {
             "k": "3dc42a135a8d45118034d1ab68213073",
             "locale": "zh_CN",
             "_t": round(time.time() * 1000),
-        }
-
-        data = {
             "e": query_params.get("e"),  # 人机验证的e参数，来自URL
             "challenge": challenge_value,
             "seccode": seccode,
         }
 
-        response = post(
+        response = get(
             "https://verify.sec.xiaomi.com/captcha/v2/gt/dk/verify",
             params=params,
-            headers=headers,
-            data=data,
+            headers=request_headers,
         )
         log.debug(response.text)
         result = response.json()
@@ -214,10 +233,10 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
         if api_data.success:
             return api_data.token
         elif not api_data.data.get("result"):
-            log.error("人机验证未完成，无法获取TOKEN")
+            log.error(f"人机验证未完成，无法获取TOKEN: {response.text}")
             return False
         else:
-            log.error("遇到未知错误，无法获取TOKEN")
+            log.error(f"遇到未知错误，无法获取TOKEN: {response.text}")
             return False
     except Exception:  # pylint: disable=broad-exception-caught
         log.exception("获取TOKEN异常")
@@ -225,9 +244,10 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
 
 
 # pylint: disable=trailing-whitespace
-def get_token(uid: str) -> str | bool:
+def get_token(uid: str, user_agent: str = "") -> str | bool:
     """获取TOKEN"""
     try:
+        request_headers = _captcha_headers(user_agent)
         for attempt in Retrying(stop=stop_after_attempt(3)):
             with attempt:
                 data = {
@@ -309,7 +329,7 @@ def get_token(uid: str) -> str | bool:
                 response = post(
                     "https://verify.sec.xiaomi.com/captcha/v2/data",
                     params=params,
-                    headers=headers,
+                    headers=request_headers,
                     data=data,
                 )
                 log.debug(response.text)
@@ -320,7 +340,7 @@ def get_token(uid: str) -> str | bool:
                 elif api_data.need_verify:
                     log.error("遇到人机验证码, 尝试调用解决方案")
                     url = api_data.data.get("url", "")
-                    if token := get_token_by_captcha(url):
+                    if token := get_token_by_captcha(url, user_agent=user_agent):
                         return token
                     return False
                 else:
