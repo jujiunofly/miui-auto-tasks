@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MIUI Auto Tasks</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=23">
+  <link rel="stylesheet" href="/static/style.css?v=24">
 </head>
 <body>
   <div class="app-shell">
@@ -105,6 +105,7 @@
       <p class="muted">敏感字段留空表示保持现有值。Cookie 请粘贴完整的 <code>key=value; key2=value2</code> 字符串。</p>
       <div id="settingsContent" class="settings-content"></div>
       <div class="modal-actions">
+        <button id="settingsReload" class="btn ghost" type="button">重新加载配置</button>
         <button id="settingsCancel" class="btn ghost" type="button">取消</button>
         <button id="settingsSave" class="btn primary" type="button">保存设置</button>
       </div>
@@ -112,6 +113,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js?v=23"></script>
+  <script src="/static/app.js?v=24"></script>
 </body>
 </html>

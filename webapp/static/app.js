@@ -503,6 +503,23 @@ async function saveSettings() {
   }
 }
 
+async function reloadSettings() {
+  const button = $("settingsReload");
+  button.disabled = true;
+  try {
+    const data = await api("/api/reload", { method: "POST" });
+    state.settingsData = data;
+    state.accountsKey = "";
+    state.telegramKey = "";
+    renderSettings(data);
+    toast("配置已重新加载", "success");
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function levelClass(level) {
   return `level level-${String(level || "INFO").toUpperCase()}`;
 }
@@ -604,6 +621,7 @@ $("settingsBtn").addEventListener("click", openSettings);
 $("settingsClose").addEventListener("click", closeSettings);
 $("settingsCancel").addEventListener("click", closeSettings);
 $("settingsSave").addEventListener("click", saveSettings);
+$("settingsReload").addEventListener("click", reloadSettings);
 $("levelFilter").addEventListener("change", (event) => {
   state.level = event.target.value;
   renderLogs();

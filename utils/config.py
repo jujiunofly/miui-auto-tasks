@@ -313,6 +313,24 @@ class ConfigManager:
             log.info(f"数据文件 {CONFIG_PATH} 不存在，已创建默认数据文件。")
 
     @classmethod
+    def reload_config(cls):
+        """重新读取配置文件，并原地更新当前配置对象。"""
+        if not os.path.exists(CONFIG_PATH) or not os.path.isfile(CONFIG_PATH):
+            raise FileNotFoundError(f"配置文件不存在: {CONFIG_PATH}")
+        with open(CONFIG_PATH, "r", encoding="utf-8") as file:
+            if CONFIG_TYPE == "json":
+                data = json.load(file)
+            else:
+                data = yaml.safe_load(file)
+        if not isinstance(data, dict):
+            raise ValueError("配置文件格式错误")
+        new_obj = Config.from_dict(data)
+        cls.data_obj.__dict__.clear()
+        cls.data_obj.__dict__.update(new_obj.__dict__)
+        cls.write_plugin_data(cls.data_obj)
+        return cls.data_obj
+
+    @classmethod
     def write_plugin_data(cls, data: Config = None):
         """
         写入插件数据文件
