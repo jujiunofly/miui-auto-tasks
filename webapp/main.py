@@ -668,6 +668,18 @@ def get_settings():
     return jsonify(_settings_payload())
 
 
+@app.post("/api/reload")
+def reload_settings():
+    """重新读取 data/config.yaml，无需重启容器。"""
+    if runner.status()["running"]:
+        return jsonify({"detail": "任务运行中，暂时不能重新加载配置"}), 409
+    try:
+        ConfigManager.reload_config()
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return jsonify({"detail": f"重新加载失败: {exc}"}), 400
+    return jsonify(_settings_payload())
+
+
 @app.patch("/api/settings")
 def update_settings():
     if runner.status()["running"]:

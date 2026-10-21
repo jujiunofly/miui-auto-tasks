@@ -47,6 +47,14 @@ docker compose up -d --build
 
 默认不自动运行；打开面板点“立即运行”，或在设置里开启每日定时。
 
+### **配置修改后如何生效**：
+- 在面板里保存设置：立即生效，不需要重启。
+- 手动编辑 `data/config.yaml`：在面板设置里点“重新加载配置”，或执行 `docker compose restart`。
+- 修改 `.env`：执行 `docker compose up -d --force-recreate`。
+- 修改代码：执行 `docker compose up -d --build`。
+
+不需要执行 `docker compose down`，也不需要删除容器或镜像。`data/` 是挂载目录，配置会保留。
+
 ### **服务器 / 手机验证码**：
 Docker 容器没有桌面浏览器，服务器用后台 Chromium 打开小米验证页并把画面实时转发到面板。出现验证码时：
 
