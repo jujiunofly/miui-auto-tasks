@@ -12,20 +12,38 @@ _PROVIDERS = {
     "2captcha": {
         "create": "https://api.2captcha.com/createTask",
         "result": "https://api.2captcha.com/getTaskResult",
-        "geetest_type": "GeeTestTaskProxyless",
-        "recaptcha_type": "RecaptchaV2EnterpriseTaskProxyless",
+        "geetest_type": {
+            "proxyless": "GeeTestTaskProxyless",
+            "proxy": "GeeTestTask",
+        },
+        "recaptcha_type": {
+            "proxyless": "RecaptchaV2EnterpriseTaskProxyless",
+            "proxy": "RecaptchaV2EnterpriseTask",
+        },
     },
     "capsolver": {
         "create": "https://api.capsolver.com/createTask",
         "result": "https://api.capsolver.com/getTaskResult",
-        "geetest_type": "GeeTestTaskProxyLess",
-        "recaptcha_type": "ReCaptchaV2EnterpriseTaskProxyLess",
+        "geetest_type": {
+            "proxyless": "GeeTestTaskProxyLess",
+            "proxy": "GeeTestTask",
+        },
+        "recaptcha_type": {
+            "proxyless": "ReCaptchaV2EnterpriseTaskProxyLess",
+            "proxy": "ReCaptchaV2EnterpriseTask",
+        },
     },
     "capzy": {
         "create": "https://api.capzy.ai/createTask",
         "result": "https://api.capzy.ai/getTaskResult",
-        "geetest_type": "GeeTestTaskProxyLess",
-        "recaptcha_type": "ReCaptchaV2EnterpriseTaskProxyLess",
+        "geetest_type": {
+            "proxyless": "GeeTestTaskProxyLess",
+            "proxy": "GeeTestTask",
+        },
+        "recaptcha_type": {
+            "proxyless": "ReCaptchaV2EnterpriseTaskProxyLess",
+            "proxy": "ReCaptchaV2EnterpriseTask",
+        },
     },
 }
 
@@ -74,6 +92,44 @@ def is_configured() -> bool:
     return True
 
 
+def _proxy_payload() -> Optional[dict]:
+    """读取可选代理配置；返回 None 表示配置有误。"""
+    conf = _captcha_conf()
+    if not conf:
+        return {}
+    address = str(getattr(conf, "proxy_address", "") or "").strip()
+    port = str(getattr(conf, "proxy_port", "") or "").strip()
+    if not address and not port:
+        return {}
+    if not address or not port:
+        log.error("代理配置不完整：需要同时填写代理地址和端口")
+        return None
+    try:
+        port_number = int(port)
+    except (TypeError, ValueError):
+        log.error("代理端口无效")
+        return None
+    if not 1 <= port_number <= 65535:
+        log.error("代理端口超出范围")
+        return None
+    proxy_type = str(getattr(conf, "proxy_type", "http") or "http").strip().lower()
+    if proxy_type not in {"http", "https", "socks4", "socks5"}:
+        log.error("代理类型无效，可选 http / https / socks4 / socks5")
+        return None
+    payload = {
+        "proxyType": proxy_type,
+        "proxyAddress": address,
+        "proxyPort": port_number,
+    }
+    login = str(getattr(conf, "proxy_login", "") or "").strip()
+    password = str(getattr(conf, "proxy_password", "") or "")
+    if login:
+        payload["proxyLogin"] = login
+    if password:
+        payload["proxyPassword"] = password
+    return payload
+
+
 def _post_json(url: str, payload: dict) -> Optional[dict]:
     try:
         response = requests.post(url, json=payload, timeout=20)
@@ -88,10 +144,20 @@ def _post_json(url: str, payload: dict) -> Optional[dict]:
         return None
 
 
-def _create_task(task: dict) -> Optional[str]:
+def _create_task(task: dict, kind: str) -> Optional[str]:
     config = _PROVIDERS.get(provider())
     if not config:
         return None
+    proxy = _proxy_payload()
+    if proxy is None:
+        return None
+    task = dict(task)
+    if proxy:
+        task.update(proxy)
+        task["type"] = config[f"{kind}_type"]["proxy"]
+        log.info("自动打码使用自定义代理")
+    else:
+        task["type"] = config[f"{kind}_type"]["proxyless"]
     data = _post_json(
         config["create"],
         {"clientKey": api_key(), "task": task},
@@ -153,9 +219,7 @@ def solve_geetest(
     """调用付费服务完成 GeeTest v3，返回小米校验所需字段。"""
     if not is_configured():
         return None
-    config = _PROVIDERS[provider()]
     task = {
-        "type": config["geetest_type"],
         "websiteURL": page_url,
         "gt": gt,
         "challenge": challenge,
@@ -164,7 +228,7 @@ def solve_geetest(
         task["userAgent"] = user_agent
 
     log.info(f"使用 {provider()} 自动完成验证码")
-    task_id = _create_task(task)
+    task_id = _create_task(task, "geetest")
     if not task_id:
         return None
     solution = _wait_result(task_id)
@@ -205,9 +269,7 @@ def solve_recaptcha(
     """调用付费服务完成 reCAPTCHA Enterprise，返回 Google token。"""
     if not is_configured():
         return None
-    config = _PROVIDERS[provider()]
     task = {
-        "type": config["recaptcha_type"],
         "websiteURL": page_url,
         "websiteKey": site_key,
         "isInvisible": bool(is_invisible),
@@ -215,7 +277,7 @@ def solve_recaptcha(
     if user_agent:
         task["userAgent"] = user_agent
     log.info(f"使用 {provider()} 自动完成 Google 验证码")
-    task_id = _create_task(task)
+    task_id = _create_task(task, "recaptcha")
     if not task_id:
         return None
     solution = _wait_result(task_id)

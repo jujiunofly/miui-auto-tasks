@@ -201,6 +201,11 @@ def _settings_payload():
             "mode": _conf.CAPTCHA.mode,
             "provider": _conf.CAPTCHA.provider,
             "has_api_key": bool(_conf.CAPTCHA.api_key),
+            "proxy_type": _conf.CAPTCHA.proxy_type,
+            "proxy_address": _conf.CAPTCHA.proxy_address,
+            "proxy_port": _conf.CAPTCHA.proxy_port,
+            "proxy_login": _conf.CAPTCHA.proxy_login,
+            "has_proxy_password": bool(_conf.CAPTCHA.proxy_password),
         },
         "schedule": {
             "enabled": bool(_conf.SCHEDULE.enabled),
@@ -717,6 +722,35 @@ def update_settings():
             _conf.CAPTCHA.provider = provider
         if captcha.get("api_key"):
             _conf.CAPTCHA.api_key = str(captcha["api_key"]).strip()
+
+        proxy_type = str(
+            captcha.get("proxy_type", _conf.CAPTCHA.proxy_type) or "http"
+        ).strip().lower()
+        if proxy_type not in {"http", "https", "socks4", "socks5"}:
+            return jsonify({"detail": "代理类型无效"}), 400
+        proxy_address = str(
+            captcha.get("proxy_address", _conf.CAPTCHA.proxy_address) or ""
+        ).strip()
+        proxy_port = str(
+            captcha.get("proxy_port", _conf.CAPTCHA.proxy_port) or ""
+        ).strip()
+        if bool(proxy_address) != bool(proxy_port):
+            return jsonify({"detail": "代理地址和端口需要同时填写"}), 400
+        if proxy_port and (
+            not proxy_port.isdigit() or not 1 <= int(proxy_port) <= 65535
+        ):
+            return jsonify({"detail": "代理端口应为 1-65535"}), 400
+        _conf.CAPTCHA.proxy_type = proxy_type
+        _conf.CAPTCHA.proxy_address = proxy_address
+        _conf.CAPTCHA.proxy_port = proxy_port
+        if proxy_address:
+            if captcha.get("proxy_login") is not None:
+                _conf.CAPTCHA.proxy_login = str(captcha["proxy_login"]).strip()
+            if captcha.get("proxy_password"):
+                _conf.CAPTCHA.proxy_password = str(captcha["proxy_password"])
+        else:
+            _conf.CAPTCHA.proxy_login = ""
+            _conf.CAPTCHA.proxy_password = ""
 
     if schedule:
         start_time = str(schedule.get("start_time") or "").strip()

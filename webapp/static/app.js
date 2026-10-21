@@ -243,6 +243,13 @@ function createCheckboxField(labelText, checked, field) {
   return wrapper;
 }
 
+function createFieldRow(fields) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "field-row";
+  fields.forEach((field) => wrapper.appendChild(field));
+  return wrapper;
+}
+
 function renderSettings(data) {
   state.settingsData = data;
   const root = $("settingsContent");
@@ -290,16 +297,54 @@ function renderSettings(data) {
         : "填写服务商 API Key",
       hint: "自动模式下使用；密钥只保存在服务器的 data/config.yaml。切换服务商后需要重新填写。",
     }),
-    createField("开始时间", data.schedule?.start_time || "09:00", {
-      field: "schedule_start",
-      type: "time",
+    createSelectField(
+      "代理类型（可选）",
+      data.captcha?.proxy_type || "http",
+      [
+        { value: "http", label: "HTTP" },
+        { value: "https", label: "HTTPS" },
+        { value: "socks4", label: "SOCKS4" },
+        { value: "socks5", label: "SOCKS5" },
+      ],
+      "captcha_proxy_type",
+    ),
+    createField("代理地址（可选）", data.captcha?.proxy_address || "", {
+      field: "captcha_proxy_address",
+      placeholder: "例如 127.0.0.1",
     }),
-    createField("结束时间", data.schedule?.end_time || "11:00", {
-      field: "schedule_end",
-      type: "time",
+    createField("代理端口（可选）", data.captcha?.proxy_port || "", {
+      field: "captcha_proxy_port",
+      placeholder: "例如 7890",
+    }),
+    createField("代理用户名（可选）", data.captcha?.proxy_login || "", {
+      field: "captcha_proxy_login",
+    }),
+    createField("代理密码（可选）", "", {
+      field: "captcha_proxy_password",
+      type: "password",
+      full: true,
+      placeholder: data.captcha?.has_proxy_password
+        ? "已设置，留空保持现有"
+        : "未设置",
     }),
   );
+  captchaGrid.appendChild(
+    createFieldRow([
+      createField("开始时间", data.schedule?.start_time || "09:00", {
+        field: "schedule_start",
+        type: "time",
+      }),
+      createField("结束时间", data.schedule?.end_time || "11:00", {
+        field: "schedule_end",
+        type: "time",
+      }),
+    ]),
+  );
   captchaSection.appendChild(captchaGrid);
+  const proxyHint = document.createElement("div");
+  proxyHint.className = "settings-note";
+  proxyHint.textContent = "代理是可选项，只用于自动打码服务访问验证码页面，不会代理整个应用。地址和端口必须同时填写。";
+  captchaSection.appendChild(proxyHint);
   const timeHint = document.createElement("div");
   timeHint.className = "settings-note";
   timeHint.textContent = "每天在开始和结束时间之间随机选一个时间运行一次（Asia/Shanghai，结束需晚于开始）。";
@@ -440,9 +485,15 @@ async function saveSettings() {
   const captcha = {
     mode: $("settingsContent").querySelector('[data-field="captcha_mode"]')?.value || "remote",
     provider: $("settingsContent").querySelector('[data-field="captcha_provider"]')?.value || "capzy",
+    proxy_type: $("settingsContent").querySelector('[data-field="captcha_proxy_type"]')?.value || "http",
+    proxy_address: $("settingsContent").querySelector('[data-field="captcha_proxy_address"]')?.value || "",
+    proxy_port: $("settingsContent").querySelector('[data-field="captcha_proxy_port"]')?.value || "",
+    proxy_login: $("settingsContent").querySelector('[data-field="captcha_proxy_login"]')?.value || "",
   };
   const captchaKey = $("settingsContent").querySelector('[data-field="captcha_api_key"]')?.value || "";
   if (captchaKey) captcha.api_key = captchaKey;
+  const proxyPassword = $("settingsContent").querySelector('[data-field="captcha_proxy_password"]')?.value || "";
+  if (proxyPassword) captcha.proxy_password = proxyPassword;
 
   const schedule = {
     enabled: Boolean($("settingsContent").querySelector('[data-field="schedule_enabled"]')?.checked),

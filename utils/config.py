@@ -191,7 +191,18 @@ class Preference:
 class Captcha:
     """验证码配置"""
 
-    def __init__(self, mode="remote", provider="capzy", api_key="", **kwargs):
+    def __init__(
+        self,
+        mode="remote",
+        provider="capzy",
+        api_key="",
+        proxy_type="http",
+        proxy_address="",
+        proxy_port="",
+        proxy_login="",
+        proxy_password="",
+        **kwargs,
+    ):
         # 忽略其他分支写入的扩展字段，避免切换分支后配置无法加载。
         self.mode = mode
         """remote=服务器远程验证；auto=自动优先并回退远程；capzy=仅自动打码"""
@@ -199,6 +210,16 @@ class Captcha:
         """自动打码服务商：capzy / 2captcha / capsolver"""
         self.api_key = api_key
         """自动打码 API Key"""
+        self.proxy_type = proxy_type
+        """可选代理类型：http / https / socks4 / socks5"""
+        self.proxy_address = proxy_address
+        """可选代理地址，留空表示不使用代理"""
+        self.proxy_port = proxy_port
+        """可选代理端口"""
+        self.proxy_login = proxy_login
+        """可选代理用户名"""
+        self.proxy_password = proxy_password
+        """可选代理密码"""
 
 
 class Schedule:
