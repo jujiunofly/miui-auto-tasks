@@ -43,6 +43,15 @@ docker compose up -d --build
 
 Compose 默认限制为 1 CPU、512MB 内存。首次构建只需要安装 Python 依赖，不再下载 Chromium。
 
+## 配置修改后如何生效
+
+- 在面板里保存设置：立即生效，不需要重启。
+- 手动编辑 `data/config.yaml`：在面板设置里点“重新加载配置”，或执行 `docker compose restart`。
+- 修改 `.env`：执行 `docker compose up -d --force-recreate`。
+- 修改代码：执行 `docker compose up -d --build`。
+
+不需要执行 `docker compose down`，也不需要删除容器或镜像。`data/` 是挂载目录，配置会保留。
+
 ## 自动打码配置
 
 打开面板右上角“设置”，在“自动打码与定时运行”里填写：
