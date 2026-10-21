@@ -255,7 +255,6 @@ def solve_recaptcha(
     page_url: str,
     site_key: str,
     is_invisible: bool = False,
-    user_agent: str = "",
 ) -> Optional[str]:
     """调用付费服务完成 reCAPTCHA Enterprise，返回 Google token。"""
     if not is_configured():
@@ -265,8 +264,6 @@ def solve_recaptcha(
         "websiteKey": site_key,
         "isInvisible": bool(is_invisible),
     }
-    if user_agent:
-        task["userAgent"] = user_agent
     log.info(f"使用 {provider()} 自动完成 Google 验证码")
     task_id = _create_task(task, "recaptcha")
     if not task_id:
