@@ -95,7 +95,7 @@ def is_incorrect_return(
     )
 
 
-def get_token_by_recaptcha(url: str) -> Union[str, bool]:
+def get_token_by_recaptcha(url: str, user_agent: str = "") -> Union[str, bool]:
     """使用付费打码服务获取 reCAPTCHA TOKEN。"""
     try:
         parsed = urlparse(url)
@@ -113,6 +113,7 @@ def get_token_by_recaptcha(url: str) -> Union[str, bool]:
             url,
             site_key,
             is_invisible=verify_type == "5",
+            user_agent=user_agent,
         )
         if not google_token:
             log.error("reCAPTCHA 自动打码失败")
@@ -137,14 +138,14 @@ def get_token_by_recaptcha(url: str) -> Union[str, bool]:
         api_data = TokenResultHandler(response.json())
         if api_data.success:
             return api_data.token
-        log.error("reCAPTCHA 自动校验失败")
+        log.error(f"reCAPTCHA 自动校验失败: {response.text}")
         return False
     except Exception:  # pylint: disable=broad-exception-caught
         log.exception("reCAPTCHA 获取 TOKEN 异常")
         return False
 
 
-def get_token_by_captcha(url: str) -> Union[str, bool]:
+def get_token_by_captcha(url: str, user_agent: str = "") -> Union[str, bool]:
     """通过人机验证码获取TOKEN"""
     try:
         parsed_url = urlparse(url)
@@ -152,7 +153,7 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
         gt = query_params.get("c", "")
         challenge = query_params.get("l", "")
         if not gt or not challenge:
-            return get_token_by_recaptcha(url)
+            return get_token_by_recaptcha(url, user_agent=user_agent)
         geetest_data = get_validate(gt, challenge)
         challenge_value = geetest_data.challenge or challenge
         seccode = ""
@@ -163,7 +164,7 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
                 url,
                 gt,
                 challenge,
-                headers.get("User-Agent", ""),
+                user_agent or headers.get("User-Agent", ""),
             )
             if solution:
                 challenge_value = solution["challenge"]
@@ -206,7 +207,7 @@ def get_token_by_captcha(url: str) -> Union[str, bool]:
 
 
 # pylint: disable=trailing-whitespace
-def get_token(uid: str) -> str | bool:
+def get_token(uid: str, user_agent: str = "") -> str | bool:
     """获取TOKEN"""
     try:
         for attempt in Retrying(stop=stop_after_attempt(3)):
@@ -301,7 +302,7 @@ def get_token(uid: str) -> str | bool:
                 elif api_data.need_verify:
                     log.warning("遇到人机验证码，尝试自动打码")
                     url = api_data.data.get("url", "")
-                    if token := get_token_by_captcha(url):
+                    if token := get_token_by_captcha(url, user_agent=user_agent):
                         return token
                     return False
                 else:

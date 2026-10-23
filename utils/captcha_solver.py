@@ -12,6 +12,12 @@ import requests
 
 from .logger import log
 
+SOLVE_TIMEOUT = 45
+"""打码任务最长等待秒数。"""
+
+POLL_INTERVAL = 1
+"""打码结果轮询间隔秒数。"""
+
 _PROVIDERS = {
     "2captcha": {
         "create": "https://api.2captcha.com/createTask",
@@ -168,7 +174,7 @@ def _create_task(task: dict, kind: str) -> Optional[str]:
     return str(task_id)
 
 
-def _wait_result(task_id: str, timeout: int = 180) -> Optional[dict]:
+def _wait_result(task_id: str, timeout: int = SOLVE_TIMEOUT) -> Optional[dict]:
     config = _PROVIDERS.get(provider())
     if not config:
         return None
@@ -196,8 +202,8 @@ def _wait_result(task_id: str, timeout: int = 180) -> Optional[dict]:
         if status != "processing":
             log.error(f"打码服务返回未知状态: {status}")
             return None
-        time.sleep(2)
-    log.error("打码服务等待结果超时")
+        time.sleep(POLL_INTERVAL)
+    log.error(f"打码服务等待结果超时（{timeout}s）")
     return None
 
 
@@ -219,12 +225,14 @@ def solve_geetest(
         task["userAgent"] = user_agent
 
     log.info(f"使用 {provider()} 自动完成极验")
+    started = time.time()
     task_id = _create_task(task, "geetest")
     if not task_id:
         return None
     solution = _wait_result(task_id)
     if not solution:
         return None
+    log.info(f"极验打码完成，用时 {time.time() - started:.1f}s")
 
     result_challenge = (
         solution.get("challenge")
@@ -255,6 +263,7 @@ def solve_recaptcha(
     page_url: str,
     site_key: str,
     is_invisible: bool = False,
+    user_agent: str = "",
 ) -> Optional[str]:
     """调用付费服务完成 reCAPTCHA Enterprise，返回 Google token。"""
     if not is_configured():
@@ -264,13 +273,17 @@ def solve_recaptcha(
         "websiteKey": site_key,
         "isInvisible": bool(is_invisible),
     }
+    if user_agent:
+        task["userAgent"] = user_agent
     log.info(f"使用 {provider()} 自动完成 Google 验证码")
+    started = time.time()
     task_id = _create_task(task, "recaptcha")
     if not task_id:
         return None
     solution = _wait_result(task_id)
     if not solution:
         return None
+    log.info(f"Google 打码完成，用时 {time.time() - started:.1f}s")
     token = (
         solution.get("gRecaptchaResponse")
         or solution.get("token")
