@@ -144,6 +144,7 @@ h2 { font-size: 17px; letter-spacing: -0.2px; }
   flex-direction: column;
 }
 .side-card .run-stats { margin-top: auto; }
+.mihoyo-card { grid-column: 1 / -1; }
 .logs-card { grid-column: 1 / -1; }
 
 .accounts { display: grid; gap: 14px; padding: 18px 22px 22px; }
@@ -164,6 +165,10 @@ h2 { font-size: 17px; letter-spacing: -0.2px; }
 .account-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--green); box-shadow: 0 0 12px rgba(61, 220, 151, 0.7);
+}
+.account-dot.mihoyo {
+  background: var(--blue);
+  box-shadow: 0 0 12px rgba(89, 167, 255, 0.65);
 }
 .account-uid { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .task-grid {

@@ -240,6 +240,39 @@ class Schedule:
         """Asia/Shanghai 时区的 HH:MM 范围，每天在范围内随机运行一次"""
 
 
+class MihoyoAccount:
+    """米游社 / 云游戏账号配置"""
+
+    def __init__(
+        self,
+        name="",
+        cookie="",
+        genshin_token="",
+        starrail_token="",
+        MysGenshin=True,
+        MysStarRail=True,
+        CloudGenshin=False,
+        CloudStarRail=False,
+        **kwargs,
+    ):
+        self.name = name
+        """账号备注名"""
+        self.cookie = cookie
+        """米游社 Cookie，原神/崩铁通用"""
+        self.genshin_token = genshin_token
+        """云原神 x-rpc-combo_token"""
+        self.starrail_token = starrail_token
+        """云崩铁 x-rpc-combo_token"""
+        self.MysGenshin = MysGenshin
+        """米游社原神社区签到"""
+        self.MysStarRail = MysStarRail
+        """米游社崩铁社区签到"""
+        self.CloudGenshin = CloudGenshin
+        """云原神签到"""
+        self.CloudStarRail = CloudStarRail
+        """云崩铁签到"""
+
+
 class Config:
     """插件数据"""
 
@@ -250,12 +283,14 @@ class Config:
         onepush=None,
         captcha=None,
         schedule=None,
+        mihoyo=None,
     ):
         self.preference = preference or Preference()
         self.accounts = accounts or [Account()]
         self.ONEPUSH = onepush or OnePush()
         self.CAPTCHA = captcha or Captcha()
         self.SCHEDULE = schedule or Schedule()
+        self.MIHOYO = mihoyo or []
 
     def to_dict(self):
         """将 Config 转换为字典"""
@@ -265,6 +300,7 @@ class Config:
             "ONEPUSH": vars(self.ONEPUSH),
             "CAPTCHA": vars(self.CAPTCHA),
             "SCHEDULE": vars(self.SCHEDULE),
+            "MIHOYO": [vars(account) for account in self.MIHOYO],
         }
 
     @classmethod
@@ -275,7 +311,8 @@ class Config:
         onepush = OnePush(**data.get("ONEPUSH", {}))
         captcha = Captcha(**(data.get("CAPTCHA") or {}))
         schedule = Schedule(**(data.get("SCHEDULE") or {}))
-        return cls(preference, accounts, onepush, captcha, schedule)
+        mihoyo = [MihoyoAccount(**account) for account in data.get("MIHOYO", [])]
+        return cls(preference, accounts, onepush, captcha, schedule, mihoyo)
 
 
 class ConfigManager:
