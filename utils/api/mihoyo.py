@@ -93,7 +93,7 @@ def _mys_headers(cookie: str, extra: Optional[dict] = None) -> dict:
     }
     if extra:
         headers.update(extra)
-    return headers
+    return {key: str(value) for key, value in headers.items()}
 
 
 def _role_headers() -> dict:
@@ -150,7 +150,7 @@ def _cloud_headers(game: dict, token: str) -> dict:
         "x-rpc-vendor_id": 2,
     }
     headers.update(game["headers"])
-    return headers
+    return {key: str(value) for key, value in headers.items()}
 
 
 def _is_ok(payload: dict) -> bool:
