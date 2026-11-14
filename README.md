@@ -68,10 +68,11 @@ Compose 默认限制为 1 CPU、512MB 内存。首次构建只需要安装 Pytho
 
 ## 米游社 / 云游戏
 
-在面板“设置 -> 米游社 / 云游戏账号”里添加账号，支持米游社原神/崩铁社区签到，以及云原神/云崩铁 Token 领取。
+在面板“设置 -> 米游社 / 云游戏账号”里添加账号，支持米游社原神/崩铁社区签到、云原神/云崩铁 Token 领取，以及米游币任务（大别野打卡、浏览、点赞、分享）。
 
 - 米游社 Cookie：登录 `bbs.mihoyo.com`，从浏览器控制台复制 `document.cookie`；原神/崩铁通用。
 - 云游戏 Token：登录云原神或云崩铁，在开发者工具 Network 中复制请求头 `x-rpc-combo_token`；两个游戏不通用。
+- 米游币 stoken/mid/uid：使用 `Miyoushe-Auto` 添加账号工具扫码后，从 `data/user_info.json` 复制 `stoken`、`mid`、`uid`；`stoken` 与米游社 Cookie 不是同一个值。
 
 添加后勾选任务，点“立即运行”或使用每日定时；结果会写入面板日志和 Telegram 汇总。
 

@@ -249,10 +249,14 @@ class MihoyoAccount:
         cookie="",
         genshin_token="",
         starrail_token="",
+        stuid="",
+        stoken="",
+        mid="",
         MysGenshin=True,
         MysStarRail=True,
         CloudGenshin=False,
         CloudStarRail=False,
+        Miyoubi=False,
         **kwargs,
     ):
         self.name = name
@@ -263,6 +267,12 @@ class MihoyoAccount:
         """云原神 x-rpc-combo_token"""
         self.starrail_token = starrail_token
         """云崩铁 x-rpc-combo_token"""
+        self.stuid = stuid
+        """米游社登录 uid，v1 stoken 使用"""
+        self.stoken = stoken
+        """米游币 stoken"""
+        self.mid = mid
+        """米游社 mid，v2 stoken 使用"""
         self.MysGenshin = MysGenshin
         """米游社原神社区签到"""
         self.MysStarRail = MysStarRail
@@ -271,6 +281,8 @@ class MihoyoAccount:
         """云原神签到"""
         self.CloudStarRail = CloudStarRail
         """云崩铁签到"""
+        self.Miyoubi = Miyoubi
+        """米游币任务"""
 
 
 class Config:

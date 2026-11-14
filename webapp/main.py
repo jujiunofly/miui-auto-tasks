@@ -50,6 +50,7 @@ MIHOYO_TASK_FIELDS = [
     "MysStarRail",
     "CloudGenshin",
     "CloudStarRail",
+    "Miyoubi",
 ]
 
 MIHOYO_TASK_LABELS = {
@@ -57,6 +58,7 @@ MIHOYO_TASK_LABELS = {
     "MysStarRail": "米游社崩铁",
     "CloudGenshin": "云原神",
     "CloudStarRail": "云崩铁",
+    "Miyoubi": "米游币任务",
 }
 
 app = Flask(
@@ -136,6 +138,9 @@ def _mihoyo_payload():
                 "has_cookie": bool(getattr(account, "cookie", "")),
                 "has_genshin_token": bool(getattr(account, "genshin_token", "")),
                 "has_starrail_token": bool(getattr(account, "starrail_token", "")),
+                "has_stuid": bool(getattr(account, "stuid", "")),
+                "has_stoken": bool(getattr(account, "stoken", "")),
+                "has_mid": bool(getattr(account, "mid", "")),
                 "tasks": [
                     {
                         "key": key,
@@ -385,6 +390,12 @@ def update_settings():
             account.genshin_token = str(item["genshin_token"]).strip()
         if item.get("starrail_token"):
             account.starrail_token = str(item["starrail_token"]).strip()
+        if item.get("stuid"):
+            account.stuid = str(item["stuid"]).strip()
+        if item.get("stoken"):
+            account.stoken = str(item["stoken"]).strip()
+        if item.get("mid"):
+            account.mid = str(item["mid"]).strip()
         for key in MIHOYO_TASK_FIELDS:
             if key in item:
                 setattr(account, key, bool(item[key]))

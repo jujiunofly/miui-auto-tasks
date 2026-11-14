@@ -14,6 +14,7 @@ from ..config import ConfigManager
 from ..logger import log
 from ..report import MihoyoAccountReport, TaskResult
 from ..request import get, post
+from .miyoubi import run_miyoubi
 
 MYS_HOST = "api-takumi.mihoyo.com"
 MYS_APP_VERSION = "2.81.1"
@@ -353,6 +354,8 @@ def run_mihoyo_accounts(report):
                 _run_cloud(account, "CloudGenshin", account_report)
             if getattr(account, "CloudStarRail", False):
                 _run_cloud(account, "CloudStarRail", account_report)
+            if getattr(account, "Miyoubi", False):
+                run_miyoubi(account, account_report)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             log.exception(f"[{name}] 米游社任务异常")
             account_report.error = str(exc)
