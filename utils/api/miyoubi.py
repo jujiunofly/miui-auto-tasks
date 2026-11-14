@@ -6,6 +6,7 @@
 import hashlib
 import json
 import random
+import re
 import string
 import time
 import uuid
@@ -15,13 +16,13 @@ from ..logger import log
 from ..report import MihoyoAccountReport, TaskResult
 from ..request import get, post
 
-BBS_HOST = "bbs-api.mihoyo.com"
-APP_VERSION = "2.67.1"
+BBS_HOST = "bbs-api.miyoushe.com"
+APP_VERSION = "2.117.0"
 CLIENT_TYPE = "2"
-SALT_DS1 = "yajbb9O8TgQYOW7JVZYfUJhXN7mAeZPE"
+SALT_DS1 = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs"
 SALT_DS2 = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"
 CHANNEL_ID = "5"  # 大别野
-FORUM_ID = "35"  # 大别野板块
+FORUM_ID = "34"  # 大别野板块（MihoyoBBSTools 当前配置）
 
 VERIFY_URL = "https://api-takumi.mihoyo.com/auth/api/getCookieAccountInfoBySToken"
 LIST_URL = (
@@ -32,6 +33,12 @@ DETAIL_URL = f"https://{BBS_HOST}/post/api/getPostFull?post_id={{}}"
 SHARE_URL = f"https://{BBS_HOST}/apihub/api/getShareConf?entity_id={{}}&entity_type=1"
 VOTE_URL = f"https://{BBS_HOST}/apihub/sapi/upvotePost"
 SIGN_URL = f"https://{BBS_HOST}/apihub/app/api/signIn"
+TASK_LIST_URL = f"https://{BBS_HOST}/apihub/wapi/getUserMissionsState"
+TASK_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 12; Unspecified Device) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    f"Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36 miHoYoBBS/{APP_VERSION}"
+)
 
 _DEVICE_ID = str(uuid.uuid4()).upper()
 
@@ -67,6 +74,10 @@ def _headers(ds: str) -> dict:
         "x-rpc-device_id": _DEVICE_ID,
         "x-rpc-device_name": "HUAWEI LIO-AN00",
         "x-rpc-device_model": "LIO-AN00",
+        "x-rpc-h265_supported": "1",
+        "x-rpc-verify_key": "bll8iq97cem8",
+        "x-rpc-csm_source": "discussion",
+        "Content-Type": "application/json; charset=UTF-8",
         "Referer": "https://app.mihoyo.com",
         "Host": BBS_HOST,
     }
@@ -74,18 +85,36 @@ def _headers(ds: str) -> dict:
 
 def _cookie_dict(account) -> dict:
     stoken = str(getattr(account, "stoken", "") or "").strip()
+    cookie = str(getattr(account, "cookie", "") or "")
     mid = str(getattr(account, "mid", "") or "").strip()
     stuid = str(getattr(account, "stuid", "") or "").strip()
+    if not mid:
+        mid_match = re.search(
+            r"(?:account_mid_v2|ltmid_v2|mid)=([^;]+)", cookie
+        )
+        if mid_match:
+            mid = mid_match.group(1).strip()
+    if not stuid:
+        stuid_match = re.search(
+            r"(?:account_id|ltuid|login_uid|ltuid_v2|account_id_v2)=(\d+)",
+            cookie,
+        )
+        if stuid_match:
+            stuid = stuid_match.group(1).strip()
     if not stoken:
         raise ValueError("未配置米游币 stoken")
     if stoken.startswith("v2_"):
         if not mid:
-            raise ValueError("v2 stoken 需要同时填写 mid")
+            raise ValueError(
+                "Cookie 中没有 mid（account_mid_v2/ltmid_v2），请重新导出米游社 Cookie"
+            )
         return {"stoken": stoken, "mid": mid}
     if not stuid:
         stuid = mid
     if not stuid:
-        raise ValueError("v1 stoken 需要同时填写 uid/stuid 或 mid")
+        raise ValueError(
+            "Cookie 中没有 uid（ltuid/account_id），请重新导出米游社 Cookie"
+        )
     return {"stoken": stoken, "stuid": stuid}
 
 
@@ -187,38 +216,124 @@ def _sign_in(cookies: dict):
     _check(_payload(response, "大别野打卡"), "大别野打卡")
 
 
+def _task_headers(account) -> dict:
+    cookie = str(getattr(account, "cookie", "") or "").strip()
+    if not cookie:
+        raise ValueError("未配置米游社 Cookie")
+    return {
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://webstatic.mihoyo.com",
+        "User-Agent": TASK_USER_AGENT,
+        "Referer": "https://webstatic.mihoyo.com",
+        "Accept-Encoding": "gzip, deflate",
+        "Accept-Language": "zh-CN,en-US;q=0.8",
+        "X-Requested-With": "com.mihoyo.hyperion",
+        "Cookie": cookie,
+    }
+
+
+def _get_task_status(account) -> dict:
+    response = get(
+        TASK_LIST_URL,
+        params={"point_sn": "myb"},
+        headers=_task_headers(account),
+        timeout=20,
+    )
+    data = _payload(response, "获取米游币任务状态")
+    if data.get("retcode") == -100:
+        raise RuntimeError("米游社 Cookie 已过期")
+    _check(data, "获取米游币任务状态")
+    info = data.get("data") or {}
+    status = {
+        "can_get": int(info.get("can_get_points") or 0),
+        "already": int(info.get("already_received_points") or 0),
+        "total": int(info.get("total_points") or 0),
+        "sign": False,
+        "read": 0,
+        "like": 0,
+        "share": False,
+    }
+    if status["can_get"] == 0:
+        status.update({"sign": True, "read": 3, "like": 5, "share": True})
+        return status
+
+    for mission in info.get("states") or []:
+        try:
+            mission_id = int(mission.get("mission_id"))
+        except (TypeError, ValueError):
+            continue
+        awarded = bool(mission.get("is_get_award"))
+        happened = int(mission.get("happened_times") or 0)
+        if mission_id == 58:
+            status["sign"] = awarded
+        elif mission_id == 59:
+            status["read"] = 3 if awarded else min(3, happened)
+        elif mission_id == 60:
+            status["like"] = 5 if awarded else min(5, happened)
+        elif mission_id == 61:
+            status["share"] = awarded
+    return status
+
+
 def _run(account) -> tuple[bool, str]:
     cookies = _cookie_dict(account)
     _verify_stoken(cookies)
     log.info("米游币登录状态正常")
+    status = _get_task_status(account)
+    if status["can_get"] == 0:
+        return True, f"今日米游币任务已完成，当前 {status['total']} 米游币"
 
-    posts = _get_posts(cookies)
-    log.info(f"获取到 {len(posts)} 个大别野帖子")
+    read_need = max(0, 3 - status["read"])
+    like_need = max(0, 5 - status["like"])
+    need_share = not status["share"]
+    need_sign = not status["sign"]
+    posts = []
+    if read_need or like_need or need_share:
+        posts = _get_posts(cookies)
+        log.info(f"获取到 {len(posts)} 个大别野帖子")
+    if read_need and len(posts) < read_need:
+        raise RuntimeError("大别野帖子数量不足，无法完成浏览任务")
+    if like_need and len(posts) < like_need:
+        raise RuntimeError("大别野帖子数量不足，无法完成点赞任务")
+    if need_share and not posts:
+        raise RuntimeError("没有可分享的大别野帖子")
+
     details = []
 
-    read_count = min(3, len(posts))
-    for item in posts[:read_count]:
-        _read_post(cookies, item)
-        details.append(f"浏览 {item['subject']}")
+    if read_need:
+        for item in posts[:read_need]:
+            _read_post(cookies, item)
+            details.append(f"浏览 {item['subject']}")
+            time.sleep(2)
+    else:
+        details.append("浏览已完成")
+
+    if like_need:
+        for item in posts[:like_need]:
+            _upvote(cookies, item)
+            details.append(f"点赞 {item['subject']}")
+            time.sleep(2)
+    else:
+        details.append("点赞已完成")
+
+    if need_share:
+        _share(cookies, posts[0])
+        details.append("分享 1 篇")
         time.sleep(2)
+    else:
+        details.append("分享已完成")
 
-    like_count = min(5, len(posts))
-    for item in posts[:like_count]:
-        _upvote(cookies, item)
-        details.append(f"点赞 {item['subject']}")
-        time.sleep(2)
+    if need_sign:
+        try:
+            _sign_in(cookies)
+            details.append("大别野打卡")
+        except RuntimeError as exc:
+            log.warning(f"米游币大别野打卡失败: {exc}")
+            return False, "；".join(details + [f"打卡失败: {exc}"])
+    else:
+        details.append("打卡已完成")
 
-    _share(cookies, posts[0])
-    details.append("分享 1 篇")
-    time.sleep(2)
-
-    try:
-        _sign_in(cookies)
-        details.append("大别野打卡")
-    except RuntimeError as exc:
-        log.warning(f"米游币大别野打卡失败: {exc}")
-        return False, "；".join(details + [f"打卡失败: {exc}"])
-
+    details.append(f"当前 {status['total']} 米游币")
     return True, "；".join(details)
 
 

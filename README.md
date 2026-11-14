@@ -102,7 +102,7 @@ playwright install chromium
 
 - 米游社 Cookie：登录 `bbs.mihoyo.com`，在浏览器控制台复制 `document.cookie`；原神/崩铁通用。
 - 云游戏 Token：登录云原神或云崩铁，在开发者工具 Network 中复制请求头 `x-rpc-combo_token`；两个游戏不通用。
-- 米游币 stoken/mid/uid：使用 `Miyoushe-Auto` 的添加账号工具扫码后，从 `data/user_info.json` 复制 `stoken`、`mid`、`uid`；`stoken` 与米游社 Cookie 不是同一个值。
+- 米游币 stoken：使用 `MihoyoBBSTools` / `Miyoushe-Auto` 的扫码工具获取 `stoken`；面板只需填 **米游社 Cookie + stoken**，uid/mid 会自动从 Cookie 中提取。
 
 添加后勾选需要执行的任务，点“立即运行”或使用每日定时；运行结果会写入面板日志和 Telegram 汇总。
 
