@@ -501,16 +501,6 @@ function renderSettings(data) {
           : "未配置",
         hint: "请求头 x-rpc-combo_token",
       }),
-      createField("米游社 UID（stuid）", "", {
-        field: "mihoyo_stuid",
-        placeholder: account.has_stuid ? "已配置，留空保持现有" : "v1 stoken 需要",
-        hint: "从 Miyoushe-Auto 的 user_info.json 复制 uid",
-      }),
-      createField("米游社 mid", "", {
-        field: "mihoyo_mid",
-        placeholder: account.has_mid ? "已配置，留空保持现有" : "v2 stoken 需要",
-        hint: "从 user_info.json 复制 mid",
-      }),
       createField("米游币 stoken", "", {
         field: "mihoyo_stoken",
         type: "password",
@@ -518,7 +508,7 @@ function renderSettings(data) {
         placeholder: account.has_stoken
           ? "已配置，留空保持现有"
           : "从 user_info.json 复制 stoken",
-        hint: "米游币/大别野任务使用；与米游社 Cookie 不是同一个值",
+        hint: "米游币/大别野任务使用；uid/mid 会自动从米游社 Cookie 提取",
       }),
     );
     const taskRow = document.createElement("div");
@@ -656,15 +646,11 @@ async function saveSettings() {
     const cookie = value("mihoyo_cookie");
     const genshinToken = value("mihoyo_genshin_token");
     const starrailToken = value("mihoyo_starrail_token");
-    const stuid = value("mihoyo_stuid");
     const stoken = value("mihoyo_stoken");
-    const mid = value("mihoyo_mid");
     if (cookie) item.cookie = cookie;
     if (genshinToken) item.genshin_token = genshinToken;
     if (starrailToken) item.starrail_token = starrailToken;
-    if (stuid) item.stuid = stuid;
     if (stoken) item.stoken = stoken;
-    if (mid) item.mid = mid;
     ["MysGenshin", "MysStarRail", "CloudGenshin", "CloudStarRail", "Miyoubi"].forEach((key) => {
       item[key] = Boolean(
         section.querySelector(`[data-field="mihoyo_${key}"]`)?.checked
