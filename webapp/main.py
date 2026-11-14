@@ -22,7 +22,7 @@ from utils.captcha_broker import submit_relay as submit_relay_captcha
 from utils.captcha_solver import is_configured as captcha_solver_configured
 from utils.captcha_solver import provider as captcha_provider
 from utils import remote_captcha
-from utils.config import ConfigManager
+from utils.config import ConfigManager, MihoyoAccount
 from utils.logger import LogCenter, log
 
 from .runner import runner
@@ -81,6 +81,20 @@ TASK_LABELS = {
     "BoardFollow": "加入圈子",
     "CarrotPull": "拔萝卜",
     "WxSign": "微信小程序签到",
+}
+
+MIHOYO_TASK_FIELDS = [
+    "MysGenshin",
+    "MysStarRail",
+    "CloudGenshin",
+    "CloudStarRail",
+]
+
+MIHOYO_TASK_LABELS = {
+    "MysGenshin": "米游社原神",
+    "MysStarRail": "米游社崩铁",
+    "CloudGenshin": "云原神",
+    "CloudStarRail": "云崩铁",
 }
 
 app = Flask(
@@ -156,6 +170,30 @@ def _accounts_payload():
     return accounts
 
 
+def _mihoyo_payload():
+    accounts = []
+    for index, account in enumerate(_conf.MIHOYO):
+        name = str(getattr(account, "name", "") or "").strip() or f"米游社账号 {index + 1}"
+        accounts.append(
+            {
+                "index": index,
+                "name": name,
+                "has_cookie": bool(getattr(account, "cookie", "")),
+                "has_genshin_token": bool(getattr(account, "genshin_token", "")),
+                "has_starrail_token": bool(getattr(account, "starrail_token", "")),
+                "tasks": [
+                    {
+                        "key": key,
+                        "label": MIHOYO_TASK_LABELS[key],
+                        "enabled": bool(getattr(account, key, False)),
+                    }
+                    for key in MIHOYO_TASK_FIELDS
+                ],
+            }
+        )
+    return accounts
+
+
 def _telegram_payload():
     notifier = _conf.ONEPUSH.notifier
     params = _conf.ONEPUSH.params or {}
@@ -189,6 +227,7 @@ def _settings_payload():
     params = _conf.ONEPUSH.params or {}
     return {
         "accounts": accounts,
+        "mihoyo_accounts": _mihoyo_payload(),
         "onepush": {
             "notifier": _conf.ONEPUSH.notifier or "",
             "title": params.get("title") or "",
@@ -534,6 +573,7 @@ def state():
         {
             "logs": LogCenter.entries(after),
             "accounts": _accounts_payload(),
+            "mihoyo_accounts": _mihoyo_payload(),
             "telegram": _telegram_payload(),
             "captcha": pending_captcha(),
             "remote_captcha": remote_captcha.current(),
@@ -568,6 +608,49 @@ def update_account(index: int):
     if not ConfigManager.write_plugin_data():
         return jsonify({"detail": "配置保存失败"}), 500
     return jsonify({"accounts": _accounts_payload()})
+
+
+@app.post("/api/mihoyo")
+def add_mihoyo_account():
+    if runner.status()["running"]:
+        return jsonify({"detail": "任务运行中，暂时不能修改配置"}), 409
+    _conf.MIHOYO.append(MihoyoAccount())
+    if not ConfigManager.write_plugin_data():
+        _conf.MIHOYO.pop()
+        return jsonify({"detail": "配置保存失败"}), 500
+    return jsonify(_settings_payload())
+
+
+@app.delete("/api/mihoyo/<int:index>")
+def delete_mihoyo_account(index: int):
+    if runner.status()["running"]:
+        return jsonify({"detail": "任务运行中，暂时不能修改配置"}), 409
+    if index < 0 or index >= len(_conf.MIHOYO):
+        return jsonify({"detail": "米游社账号不存在"}), 404
+    _conf.MIHOYO.pop(index)
+    if not ConfigManager.write_plugin_data():
+        return jsonify({"detail": "配置保存失败"}), 500
+    return jsonify(_settings_payload())
+
+
+@app.patch("/api/mihoyo/<int:index>")
+def update_mihoyo_account(index: int):
+    if runner.status()["running"]:
+        return jsonify({"detail": "任务运行中，暂时不能修改配置"}), 409
+    if index < 0 or index >= len(_conf.MIHOYO):
+        return jsonify({"detail": "米游社账号不存在"}), 404
+    data = request.get_json(silent=True) or {}
+    tasks = data.get("tasks")
+    if not isinstance(tasks, dict):
+        return jsonify({"detail": "tasks 必须是对象"}), 400
+    account = _conf.MIHOYO[index]
+    for key, value in tasks.items():
+        if key not in MIHOYO_TASK_FIELDS:
+            return jsonify({"detail": f"未知米游社任务: {key}"}), 400
+        setattr(account, key, bool(value))
+    if not ConfigManager.write_plugin_data():
+        return jsonify({"detail": "配置保存失败"}), 500
+    return jsonify({"mihoyo_accounts": _mihoyo_payload()})
 
 
 @app.get("/api/captcha/pending")
@@ -686,11 +769,14 @@ def update_settings():
         return jsonify({"detail": "任务运行中，暂时不能修改设置"}), 409
     data = request.get_json(silent=True) or {}
     accounts = data.get("accounts") or []
+    mihoyo = data.get("mihoyo") or []
     onepush = data.get("onepush") or {}
     captcha = data.get("captcha") or {}
     schedule = data.get("schedule") or {}
     if not isinstance(accounts, list) or not isinstance(onepush, dict):
         return jsonify({"detail": "设置格式错误"}), 400
+    if not isinstance(mihoyo, list):
+        return jsonify({"detail": "米游社设置格式错误"}), 400
     if not isinstance(captcha, dict) or not isinstance(schedule, dict):
         return jsonify({"detail": "设置格式错误"}), 400
 
@@ -718,6 +804,25 @@ def update_settings():
             account.device = str(item["device"]).strip()
         if item.get("device_model") is not None:
             account.device_model = str(item["device_model"]).strip()
+
+    for item in mihoyo:
+        if not isinstance(item, dict):
+            return jsonify({"detail": "米游社账号设置格式错误"}), 400
+        index = item.get("index")
+        if not isinstance(index, int) or index < 0 or index >= len(_conf.MIHOYO):
+            return jsonify({"detail": "米游社账号不存在"}), 404
+        account = _conf.MIHOYO[index]
+        if item.get("name") is not None:
+            account.name = str(item["name"]).strip()
+        if item.get("cookie"):
+            account.cookie = str(item["cookie"]).strip()
+        if item.get("genshin_token"):
+            account.genshin_token = str(item["genshin_token"]).strip()
+        if item.get("starrail_token"):
+            account.starrail_token = str(item["starrail_token"]).strip()
+        for key in MIHOYO_TASK_FIELDS:
+            if key in item:
+                setattr(account, key, bool(item[key]))
 
     if captcha:
         mode = str(captcha.get("mode") or "").strip().lower()

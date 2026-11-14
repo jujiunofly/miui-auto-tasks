@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MIUI Auto Tasks</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/style.css?v=23">
+  <link rel="stylesheet" href="/static/style.css?v=24">
 </head>
 <body>
   <div class="app-shell">
@@ -60,6 +60,17 @@
             <strong id="lastFinished">暂无</strong>
           </div>
         </div>
+      </section>
+
+      <section class="card mihoyo-card">
+        <div class="card-head">
+          <div>
+            <h2>米游社 / 云游戏</h2>
+            <p class="muted">米游社社区签到、云原神 / 云崩铁领取</p>
+          </div>
+          <span id="mihoyoCount" class="badge">0 个账号</span>
+        </div>
+        <div id="mihoyoAccounts" class="accounts"></div>
       </section>
 
       <section class="card logs-card">
@@ -167,6 +178,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/static/app.js?v=23"></script>
+  <script src="/static/app.js?v=24"></script>
 </body>
 </html>

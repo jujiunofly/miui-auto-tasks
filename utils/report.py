@@ -58,12 +58,22 @@ class AccountReport:
 
 
 @dataclass
+class MihoyoAccountReport:
+    """单个米游社/云游戏账号运行结果"""
+
+    name: str
+    executed: list[TaskResult] = field(default_factory=list)
+    error: str = ""
+
+
+@dataclass
 class RunReport:
     """一次完整运行结果"""
 
     started_at: datetime
     finished_at: Optional[datetime] = None
     accounts: list[AccountReport] = field(default_factory=list)
+    mihoyo_accounts: list[MihoyoAccountReport] = field(default_factory=list)
 
     @property
     def duration(self) -> str:
@@ -77,8 +87,8 @@ class RunReport:
 
     def message(self) -> str:
         """生成适合 Telegram 的纯文本报告"""
-        lines = ["🍀 小米社区任务报告", "━━━━━━━━━━━━━━"]
-        if not self.accounts:
+        lines = ["🍀 自动任务报告", "━━━━━━━━━━━━━━"]
+        if not self.accounts and not self.mihoyo_accounts:
             lines.append("没有可执行的账号")
 
         for index, account in enumerate(self.accounts):
@@ -126,6 +136,21 @@ class RunReport:
                 shown = "、".join(account.completed[:6])
                 suffix = " 等" if len(account.completed) > 6 else ""
                 lines.append(f"📌 此前已完成：{shown}{suffix}")
+
+        if self.mihoyo_accounts:
+            lines.extend(["", "🎮 米游社 / 云游戏", "━━━━━━━━━━━━━━"])
+            for index, account in enumerate(self.mihoyo_accounts):
+                if index:
+                    lines.append("")
+                lines.append(f"👤 {account.name}")
+                if account.error:
+                    lines.append(f"❌ 异常：{account.error}")
+                for item in account.executed:
+                    icon = "✅" if item.success else "⚠️"
+                    detail = item.message or ("完成" if item.success else "失败")
+                    lines.append(f"{icon} {item.name}：{detail}")
+                if not account.executed and not account.error:
+                    lines.append("ℹ️ 本次没有启用任务")
 
         lines.extend(
             [

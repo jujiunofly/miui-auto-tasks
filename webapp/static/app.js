@@ -10,6 +10,8 @@ const state = {
   lastRun: {},
   accounts: [],
   accountsKey: "",
+  mihoyoAccounts: [],
+  mihoyoKey: "",
   telegram: {},
   telegramKey: "",
   captchaMode: "browser",
@@ -153,6 +155,92 @@ async function saveAccount(index, card) {
     toast(error.message, "error");
     state.accountsKey = "";
     renderAccounts(state.accounts);
+  }
+}
+
+function renderMihoyo(accounts) {
+  const key = JSON.stringify({ accounts, running: state.running });
+  if (key === state.mihoyoKey) return;
+  state.mihoyoKey = key;
+  state.mihoyoAccounts = accounts;
+  const root = $("mihoyoAccounts");
+  root.innerHTML = "";
+  $("mihoyoCount").textContent = `${accounts.length} 个账号`;
+
+  if (!accounts.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "还没有米游社账号，打开右上角设置添加。";
+    root.appendChild(empty);
+    return;
+  }
+
+  accounts.forEach((account) => {
+    const card = document.createElement("div");
+    card.className = "account";
+
+    const head = document.createElement("div");
+    head.className = "account-head";
+    const name = document.createElement("div");
+    name.className = "account-name";
+    name.innerHTML = '<span class="account-dot mihoyo"></span>';
+    const nameText = document.createElement("span");
+    nameText.textContent = account.name;
+    name.appendChild(nameText);
+    const secrets = document.createElement("span");
+    secrets.className = "account-uid";
+    const configured = [];
+    if (account.has_cookie) configured.push("Cookie");
+    if (account.has_genshin_token) configured.push("云原神");
+    if (account.has_starrail_token) configured.push("云崩铁");
+    secrets.textContent = configured.length
+      ? `已配置：${configured.join(" / ")}`
+      : "未配置 Cookie / Token";
+    head.append(name, secrets);
+
+    const grid = document.createElement("div");
+    grid.className = "task-grid";
+    account.tasks.forEach((task) => {
+      const label = document.createElement("label");
+      label.className = "task-toggle";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = task.enabled;
+      checkbox.dataset.task = task.key;
+      checkbox.disabled = state.running;
+      checkbox.addEventListener("change", () => saveMihoyoAccount(account.index, card));
+      const text = document.createElement("span");
+      text.textContent = task.label;
+      label.append(checkbox, text);
+      grid.appendChild(label);
+    });
+
+    card.append(head, grid);
+    root.appendChild(card);
+  });
+}
+
+async function saveMihoyoAccount(index, card) {
+  const tasks = {};
+  card.querySelectorAll("input[data-task]").forEach((input) => {
+    tasks[input.dataset.task] = input.checked;
+  });
+  card.querySelectorAll("input[data-task]").forEach((input) => {
+    input.disabled = true;
+  });
+  try {
+    const data = await api(`/api/mihoyo/${index}`, {
+      method: "PATCH",
+      body: JSON.stringify({ tasks }),
+    });
+    state.mihoyoAccounts = data.mihoyo_accounts;
+    state.mihoyoKey = "";
+    renderMihoyo(data.mihoyo_accounts);
+    toast("米游社任务开关已保存", "success");
+  } catch (error) {
+    toast(error.message, "error");
+    state.mihoyoKey = "";
+    renderMihoyo(state.mihoyoAccounts);
   }
 }
 
@@ -362,6 +450,87 @@ function renderSettings(data) {
   captchaSection.appendChild(scheduleNote);
   root.appendChild(captchaSection);
 
+  const mihoyoHeader = document.createElement("div");
+  mihoyoHeader.className = "settings-section";
+  const mihoyoHeaderTitle = document.createElement("h3");
+  mihoyoHeaderTitle.textContent = "米游社 / 云游戏账号";
+  mihoyoHeader.appendChild(mihoyoHeaderTitle);
+  const mihoyoNote = document.createElement("div");
+  mihoyoNote.className = "settings-note";
+  mihoyoNote.textContent = "米游社 Cookie 原神/崩铁通用；云游戏 Token 分别对应云原神和云崩铁。Cookie 和 Token 只保存在服务器配置。";
+  mihoyoHeader.appendChild(mihoyoNote);
+  const mihoyoAdd = document.createElement("button");
+  mihoyoAdd.id = "mihoyoAdd";
+  mihoyoAdd.className = "btn ghost small";
+  mihoyoAdd.type = "button";
+  mihoyoAdd.textContent = "添加米游社账号";
+  mihoyoAdd.addEventListener("click", addMihoyoAccount);
+  mihoyoHeader.appendChild(mihoyoAdd);
+  root.appendChild(mihoyoHeader);
+
+  (data.mihoyo_accounts || []).forEach((account) => {
+    const section = document.createElement("div");
+    section.className = "settings-section";
+    section.dataset.mihoyoIndex = account.index;
+    const head = document.createElement("div");
+    head.className = "account-head";
+    const title = document.createElement("h3");
+    title.textContent = account.name;
+    const remove = document.createElement("button");
+    remove.className = "btn ghost small";
+    remove.type = "button";
+    remove.textContent = "删除此账号";
+    remove.addEventListener("click", () => deleteMihoyoAccount(account.index));
+    head.append(title, remove);
+    section.appendChild(head);
+
+    const grid = document.createElement("div");
+    grid.className = "settings-grid";
+    grid.append(
+      createField("备注名", account.name, {
+        field: "mihoyo_name",
+        full: true,
+        placeholder: "例如：主号",
+      }),
+      createField("米游社 Cookie", "", {
+        field: "mihoyo_cookie",
+        multiline: true,
+        full: true,
+        placeholder: account.has_cookie
+          ? "已配置，留空保持现有"
+          : "粘贴米游社 Cookie",
+        hint: "登录 bbs.mihoyo.com 后从浏览器 Cookie 复制；原神/崩铁通用。",
+      }),
+      createField("云原神 Token", "", {
+        field: "mihoyo_genshin_token",
+        type: "password",
+        placeholder: account.has_genshin_token
+          ? "已配置，留空保持现有"
+          : "未配置",
+        hint: "请求头 x-rpc-combo_token",
+      }),
+      createField("云崩铁 Token", "", {
+        field: "mihoyo_starrail_token",
+        type: "password",
+        placeholder: account.has_starrail_token
+          ? "已配置，留空保持现有"
+          : "未配置",
+        hint: "请求头 x-rpc-combo_token",
+      }),
+    );
+    const taskRow = document.createElement("div");
+    taskRow.className = "field-row";
+    taskRow.append(
+      createCheckboxField("米游社原神", account.tasks.find((item) => item.key === "MysGenshin")?.enabled, "mihoyo_MysGenshin"),
+      createCheckboxField("米游社崩铁", account.tasks.find((item) => item.key === "MysStarRail")?.enabled, "mihoyo_MysStarRail"),
+      createCheckboxField("云原神", account.tasks.find((item) => item.key === "CloudGenshin")?.enabled, "mihoyo_CloudGenshin"),
+      createCheckboxField("云崩铁", account.tasks.find((item) => item.key === "CloudStarRail")?.enabled, "mihoyo_CloudStarRail"),
+    );
+    grid.appendChild(taskRow);
+    section.appendChild(grid);
+    root.appendChild(section);
+  });
+
   data.accounts.forEach((account) => {
     const section = document.createElement("div");
     section.className = "settings-section";
@@ -473,6 +642,27 @@ async function saveSettings() {
     accounts.push(item);
   });
 
+  const mihoyo = [];
+  document.querySelectorAll(".settings-section[data-mihoyo-index]").forEach((section) => {
+    const value = (field) => section.querySelector(`[data-field="${field}"]`)?.value || "";
+    const item = {
+      index: Number(section.dataset.mihoyoIndex),
+      name: value("mihoyo_name"),
+    };
+    const cookie = value("mihoyo_cookie");
+    const genshinToken = value("mihoyo_genshin_token");
+    const starrailToken = value("mihoyo_starrail_token");
+    if (cookie) item.cookie = cookie;
+    if (genshinToken) item.genshin_token = genshinToken;
+    if (starrailToken) item.starrail_token = starrailToken;
+    ["MysGenshin", "MysStarRail", "CloudGenshin", "CloudStarRail"].forEach((key) => {
+      item[key] = Boolean(
+        section.querySelector(`[data-field="mihoyo_${key}"]`)?.checked
+      );
+    });
+    mihoyo.push(item);
+  });
+
   const onepush = {
     notifier: $("settingsContent").querySelector('[data-field="onepush_notifier"]')?.value || "",
     title: $("settingsContent").querySelector('[data-field="onepush_title"]')?.value || "",
@@ -506,7 +696,7 @@ async function saveSettings() {
   try {
     const data = await api("/api/settings", {
       method: "PATCH",
-      body: JSON.stringify({ accounts, onepush, captcha, schedule }),
+      body: JSON.stringify({ accounts, mihoyo, onepush, captcha, schedule }),
     });
     state.settingsData = data;
     state.accountsKey = "";
@@ -517,6 +707,31 @@ async function saveSettings() {
     toast(error.message, "error");
   } finally {
     button.disabled = false;
+  }
+}
+
+async function addMihoyoAccount() {
+  const button = $("mihoyoAdd");
+  if (button) button.disabled = true;
+  try {
+    const data = await api("/api/mihoyo", { method: "POST" });
+    renderSettings(data);
+    toast("已添加米游社账号，请填写 Cookie/Token", "success");
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function deleteMihoyoAccount(index) {
+  if (!confirm("确定删除这个米游社账号吗？")) return;
+  try {
+    const data = await api(`/api/mihoyo/${index}`, { method: "DELETE" });
+    renderSettings(data);
+    toast("米游社账号已删除", "success");
+  } catch (error) {
+    toast(error.message, "error");
   }
 }
 
@@ -871,6 +1086,7 @@ async function poll() {
     state.lastRun = data.last_run || {};
     state.captchaMode = data.captcha_mode || "browser";
     renderAccounts(data.accounts || []);
+    renderMihoyo(data.mihoyo_accounts || []);
     renderTelegram(data.telegram || {});
     setStatus(state.running, state.lastRun);
     addLogs(data.logs || []);

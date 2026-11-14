@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from tenacity import Retrying, stop_after_attempt
 
 from utils.api.login import Login
+from utils.api.mihoyo import run_mihoyo_accounts
 from utils.api.sign import BaseSign, CheckIn
 from utils.config import ConfigManager
 from utils.logger import LogCenter, log
@@ -94,10 +95,21 @@ def main(auto_notify: bool = True):
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.exception("账号任务异常")
             account_report.error = str(e)
+    try:
+        run_mihoyo_accounts(report)
+    except Exception:  # pylint: disable=broad-exception-caught
+        log.exception("米游社/云游戏任务异常")
     report.finished_at = datetime.now(LOCAL_TZ)
     executed_count = sum(len(item.executed) for item in report.accounts)
+    mihoyo_executed_count = sum(
+        len(item.executed) for item in report.mihoyo_accounts
+    )
     completed_count = sum(len(item.completed) for item in report.accounts)
-    log.info(f"本次执行 {executed_count} 个未完成任务，{completed_count} 个任务已完成")
+    log.info(
+        f"本次执行 {executed_count} 个小米任务，"
+        f"{mihoyo_executed_count} 个米游社任务，"
+        f"{completed_count} 个任务已完成"
+    )
     if auto_notify:
         notify_me(report.message())
 
