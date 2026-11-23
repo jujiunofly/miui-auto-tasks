@@ -39,17 +39,38 @@ def _retry_settings() -> tuple[int, int]:
     return max(1, min(10, max_attempts)), max(1, min(60, interval))
 
 
+class _CheckinFailure:
+    """签到尝试异常时的最小结果对象。"""
+
+    def __init__(self, message: str):
+        self.last_message = message
+        self.last_growth = None
+        self.last_success = False
+
+
 def _run_checkin(account, cookies) -> tuple[CheckIn, bool, str, int]:
     """执行每日签到；失败后按 5、10、15 分钟递增重试。"""
     max_attempts, interval = _retry_settings()
     task_instance = None
-    for attempt in range(1, max_attempts + 1):
-        token = get_token(
-            cookies["cUserId"],
-            user_agent=account.user_agent,
+    if max_attempts > 1:
+        log.info(
+            f"每日签到重试设置：最多 {max_attempts} 次，"
+            f"基础间隔 {interval} 分钟"
         )
-        task_instance = CheckIn(account, token)
-        status, reason = task_instance.sign()
+    for attempt in range(1, max_attempts + 1):
+        if max_attempts > 1:
+            log.info(f"每日签到第 {attempt}/{max_attempts} 次尝试")
+        try:
+            token = get_token(
+                cookies["cUserId"],
+                user_agent=account.user_agent,
+            )
+            task_instance = CheckIn(account, token)
+            status, reason = task_instance.sign()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            log.exception("每日签到尝试异常")
+            task_instance = _CheckinFailure(f"请求异常: {exc}")
+            status, reason = False, "None"
         if status or reason == "cookie":
             return task_instance, status, reason, attempt
         message = str(task_instance.last_message or "未知原因")
