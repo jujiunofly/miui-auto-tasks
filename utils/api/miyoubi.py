@@ -11,10 +11,13 @@ import hashlib
 import json
 import random
 import re
+import socket
 import string
 import time
 import uuid
 from typing import Optional
+
+from requests.exceptions import RequestException
 
 from ..captcha_solver import is_configured as captcha_configured
 from ..captcha_solver import solve_geetest
@@ -23,7 +26,8 @@ from ..logger import log
 from ..report import MihoyoAccountReport, TaskResult
 from ..request import get, post
 
-BBS_API = "https://bbs-api.miyoushe.com"
+BBS_HOSTS = ("bbs-api.mihoyo.com", "bbs-api.miyoushe.com")
+BBS_CONNECT_TIMEOUT = 8
 PASSPORT_EXCHANGE_URL = (
     "https://passport-api.mihoyo.com/account/ma-cn-session/app/exchange"
 )
@@ -39,14 +43,14 @@ BBS_DS2_SALT = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"
 PASSPORT_SALT = "JwYDpKvLj6MrMqqYU6jTKF17KNO2PXoS"
 BBS_APP_ID = "bll8iq97cem8"
 
-TASK_LIST_URL = f"{BBS_API}/apihub/wapi/getUserMissionsState"
-SIGN_URL = f"{BBS_API}/apihub/app/api/signIn"
-POST_LIST_URL = f"{BBS_API}/post/api/getForumPostList"
-POST_DETAIL_URL = f"{BBS_API}/post/api/getPostFull"
-SHARE_URL = f"{BBS_API}/apihub/api/getShareConf"
-LIKE_URL = f"{BBS_API}/apihub/sapi/upvotePost"
-CAPTCHA_CREATE_URL = f"{BBS_API}/misc/api/createVerification?is_high=true"
-CAPTCHA_VERIFY_URL = f"{BBS_API}/misc/api/verifyVerification"
+TASK_LIST_PATH = "/apihub/wapi/getUserMissionsState"
+SIGN_PATH = "/apihub/app/api/signIn"
+POST_LIST_PATH = "/post/api/getForumPostList"
+POST_DETAIL_PATH = "/post/api/getPostFull"
+SHARE_PATH = "/apihub/api/getShareConf"
+LIKE_PATH = "/apihub/sapi/upvotePost"
+CAPTCHA_CREATE_PATH = "/misc/api/createVerification?is_high=true"
+CAPTCHA_VERIFY_PATH = "/misc/api/verifyVerification"
 
 TASK_USER_AGENT = (
     "Mozilla/5.0 (Linux; Android 12; Unspecified Device) "
@@ -224,7 +228,6 @@ def _app_headers(account) -> dict:
         "x-rpc-verify_key": BBS_APP_ID,
         "x-rpc-csm_source": "discussion",
         "Content-Type": "application/json; charset=UTF-8",
-        "Host": "bbs-api.miyoushe.com",
         "Connection": "Keep-Alive",
         "Accept-Encoding": "gzip",
         "User-Agent": APP_USER_AGENT,
@@ -263,6 +266,73 @@ def _check(data: dict, action: str):
         raise RuntimeError(
             f"{action}失败: {_message(data)} (code {data.get('retcode')})"
         )
+
+
+def _bbs_request(
+    method: str,
+    path: str,
+    *,
+    headers: Optional[dict] = None,
+    timeout: int = 20,
+    **kwargs,
+):
+    """BBS 请求：优先 IPv4 域名，失败后切换原域名，并做短重试。"""
+    last_error = None
+    for host in BBS_HOSTS:
+        request_headers = dict(headers or {})
+        request_headers["Host"] = host
+        url = f"https://{host}{path}"
+        for attempt in range(2):
+            try:
+                if method.upper() == "GET":
+                    response = get(
+                        url,
+                        headers=request_headers,
+                        timeout=(BBS_CONNECT_TIMEOUT, timeout),
+                        **kwargs,
+                    )
+                else:
+                    response = post(
+                        url,
+                        headers=request_headers,
+                        timeout=(BBS_CONNECT_TIMEOUT, timeout),
+                        **kwargs,
+                    )
+                if response.status_code in {403, 502, 503, 504}:
+                    last_error = RuntimeError(
+                        f"HTTP {response.status_code}"
+                    )
+                    log.warning(
+                        f"米游社 {host} 返回 HTTP {response.status_code}，"
+                        f"尝试下一个域名"
+                    )
+                    time.sleep(1 + attempt)
+                    break
+                if host != BBS_HOSTS[0]:
+                    log.warning(f"米游社主域名不可用，已切换到 {host}")
+                return response
+            except RequestException as exc:
+                last_error = exc
+                try:
+                    addresses = sorted(
+                        {
+                            info[4][0]
+                            for info in socket.getaddrinfo(
+                                host, 443, type=socket.SOCK_STREAM
+                            )
+                        }
+                    )
+                except OSError:
+                    addresses = []
+                address_text = f"；解析: {', '.join(addresses[:6])}" if addresses else ""
+                log.warning(
+                    f"米游社 {host} 连接失败（{attempt + 1}/2）: {exc}"
+                    f"{address_text}"
+                )
+                time.sleep(1 + attempt)
+    raise RuntimeError(
+        f"米游社接口连接失败（已尝试 {' / '.join(BBS_HOSTS)}）: {last_error}"
+    ) from last_error
 
 
 def _cookie_invalid(data: dict) -> bool:
@@ -347,8 +417,9 @@ def refresh_account_cookie(account) -> str:
 
 def _get_tasks(account, retry: bool = True) -> dict:
     log.info("正在获取米游币任务状态")
-    response = get(
-        TASK_LIST_URL,
+    response = _bbs_request(
+        "GET",
+        TASK_LIST_PATH,
         params={"point_sn": "myb"},
         headers=_task_headers(account),
         timeout=20,
@@ -400,8 +471,9 @@ def _get_tasks(account, retry: bool = True) -> dict:
 
 def _get_posts(account, count: int) -> list[dict]:
     log.info("正在获取大别野帖子")
-    response = get(
-        POST_LIST_URL,
+    response = _bbs_request(
+        "GET",
+        POST_LIST_PATH,
         params={
             "forum_id": "34",
             "is_good": "false",
@@ -431,8 +503,9 @@ def _get_posts(account, count: int) -> list[dict]:
 
 
 def _read_post(account, item: dict):
-    response = get(
-        POST_DETAIL_URL,
+    response = _bbs_request(
+        "GET",
+        POST_DETAIL_PATH,
         params={"post_id": item["post_id"]},
         headers=_app_headers(account),
         timeout=20,
@@ -444,8 +517,9 @@ def _solve_bbs_challenge(account) -> Optional[str]:
     if not captcha_configured():
         log.warning("米游社触发验证码，但未配置自动打码，跳过本次操作")
         return None
-    response = get(
-        CAPTCHA_CREATE_URL,
+    response = _bbs_request(
+        "GET",
+        CAPTCHA_CREATE_PATH,
         headers=_app_headers(account),
         timeout=20,
     )
@@ -467,8 +541,9 @@ def _solve_bbs_challenge(account) -> Optional[str]:
     )
     if not solution:
         return None
-    verify = post(
-        CAPTCHA_VERIFY_URL,
+    verify = _bbs_request(
+        "POST",
+        CAPTCHA_VERIFY_PATH,
         headers=_app_headers(account),
         json={
             "geetest_challenge": solution["challenge"],
@@ -495,8 +570,9 @@ def _like_post(account, item: dict, captcha_try: bool = False):
         if not challenge:
             return False
         headers["x-rpc-challenge"] = challenge
-    response = post(
-        LIKE_URL,
+    response = _bbs_request(
+        "POST",
+        LIKE_PATH,
         headers=headers,
         json={"post_id": item["post_id"], "is_cancel": False},
         timeout=20,
@@ -515,8 +591,9 @@ def _like_post(account, item: dict, captcha_try: bool = False):
 def _share_post(account, item: dict):
     last_error = ""
     for _ in range(3):
-        response = get(
-            SHARE_URL,
+        response = _bbs_request(
+            "GET",
+            SHARE_PATH,
             params={"entity_id": item["post_id"], "entity_type": 1},
             headers=_app_headers(account),
             timeout=20,
@@ -538,8 +615,9 @@ def _sign_forum(account, forum_id: str, captcha_try: bool = False) -> tuple[bool
         if not challenge:
             return False, "触发验证码且自动验证失败"
         headers["x-rpc-challenge"] = challenge
-    response = post(
-        SIGN_URL,
+    response = _bbs_request(
+        "POST",
+        SIGN_PATH,
         headers=headers,
         data=body,
         timeout=20,
