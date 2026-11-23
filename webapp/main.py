@@ -66,6 +66,7 @@ app = Flask(
     static_folder=str(BASE_DIR / "static"),
     static_url_path="/static",
 )
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 app.wsgi_app = ProxyFix(
     app.wsgi_app,
     x_for=1,
