@@ -5,6 +5,7 @@ LastEditTime: 2025-01-19 17:09:37
 LastEditors: Night-stars-1 nujj1042633805@gmail.com
 """
 
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -22,6 +23,48 @@ from utils.utils import get_token
 
 _conf = ConfigManager.data_obj
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _retry_settings() -> tuple[int, int]:
+    """读取每日签到重试设置。"""
+    schedule = getattr(ConfigManager.data_obj, "SCHEDULE", None)
+    try:
+        max_attempts = int(getattr(schedule, "checkin_retry_max", 3) or 3)
+    except (TypeError, ValueError):
+        max_attempts = 3
+    try:
+        interval = int(getattr(schedule, "checkin_retry_interval", 5) or 5)
+    except (TypeError, ValueError):
+        interval = 5
+    return max(1, min(10, max_attempts)), max(1, min(60, interval))
+
+
+def _run_checkin(account, cookies) -> tuple[CheckIn, bool, str, int]:
+    """执行每日签到；失败后按 5、10、15 分钟递增重试。"""
+    max_attempts, interval = _retry_settings()
+    task_instance = None
+    for attempt in range(1, max_attempts + 1):
+        token = get_token(
+            cookies["cUserId"],
+            user_agent=account.user_agent,
+        )
+        task_instance = CheckIn(account, token)
+        status, reason = task_instance.sign()
+        if status or reason == "cookie":
+            return task_instance, status, reason, attempt
+        message = str(task_instance.last_message or "未知原因")
+        if "已签到" in message or "已经签到" in message:
+            task_instance.last_success = True
+            return task_instance, True, reason, attempt
+        if attempt >= max_attempts:
+            return task_instance, status, reason, attempt
+        wait_minutes = interval * attempt
+        log.warning(
+            f"每日签到失败（{message}），{wait_minutes} 分钟后重试"
+            f"（{attempt + 1}/{max_attempts}）"
+        )
+        time.sleep(wait_minutes * 60)
+    return task_instance, False, "None", max_attempts
 
 
 def main(auto_notify: bool = True):
@@ -60,22 +103,29 @@ def main(auto_notify: bool = True):
                             if not getattr(account, task_obj.__name__):
                                 log.info(f"任务{task.name}被禁用")
                                 continue
-                            token = (
-                                get_token(
-                                    cookies["cUserId"],
-                                    user_agent=account.user_agent,
-                                )
-                                if task_obj == CheckIn
-                                else None
-                            )
-                            task_instance = task_obj(account, token)
-                            status, reason = task_instance.sign()
+                            if task_obj == CheckIn:
+                                (
+                                    task_instance,
+                                    status,
+                                    reason,
+                                    attempts,
+                                ) = _run_checkin(account, cookies)
+                            else:
+                                task_instance = task_obj(account, None)
+                                status, reason = task_instance.sign()
+                                attempts = 1
+                            message = str(task_instance.last_message or "")
+                            if task_obj == CheckIn and attempts > 1:
+                                if status:
+                                    message = f"{message}（第 {attempts} 次尝试成功）"
+                                else:
+                                    message = f"{message}（已尝试 {attempts} 次）"
                             account_report.executed.append(
                                 TaskResult(
                                     name=task.name,
                                     success=status,
                                     growth=normalize_growth(task_instance.last_growth),
-                                    message=task_instance.last_message,
+                                    message=message,
                                 )
                             )
                             if not status and reason == "cookie":

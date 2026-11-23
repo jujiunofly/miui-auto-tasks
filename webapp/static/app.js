@@ -429,6 +429,28 @@ function renderSettings(data) {
       }),
     ]),
   );
+  captchaGrid.appendChild(
+    createFieldRow([
+      createField(
+        "每日签到最多尝试",
+        data.schedule?.checkin_retry_max ?? 3,
+        {
+          field: "schedule_checkin_retry_max",
+          type: "number",
+          hint: "含第一次，建议 3 次",
+        },
+      ),
+      createField(
+        "重试间隔（分钟）",
+        data.schedule?.checkin_retry_interval ?? 5,
+        {
+          field: "schedule_checkin_retry_interval",
+          type: "number",
+          hint: "之后按 5、10、15 分钟递增",
+        },
+      ),
+    ]),
+  );
   captchaSection.appendChild(captchaGrid);
   const proxyHint = document.createElement("div");
   proxyHint.className = "settings-note";
@@ -436,7 +458,7 @@ function renderSettings(data) {
   captchaSection.appendChild(proxyHint);
   const timeHint = document.createElement("div");
   timeHint.className = "settings-note";
-  timeHint.textContent = "每天在开始和结束时间之间随机选一个时间运行一次（Asia/Shanghai，结束需晚于开始）。";
+  timeHint.textContent = "每天在开始和结束时间之间随机选一个时间运行一次（Asia/Shanghai，结束需晚于开始）。每日签到失败会按间隔递增重试，其他任务不重试。";
   captchaSection.appendChild(timeHint);
   captchaSection.appendChild(
     createCheckboxField(
@@ -702,6 +724,8 @@ async function saveSettings() {
     enabled: Boolean($("settingsContent").querySelector('[data-field="schedule_enabled"]')?.checked),
     start_time: $("settingsContent").querySelector('[data-field="schedule_start"]')?.value || "09:00",
     end_time: $("settingsContent").querySelector('[data-field="schedule_end"]')?.value || "11:00",
+    checkin_retry_max: Number($("settingsContent").querySelector('[data-field="schedule_checkin_retry_max"]')?.value || 3),
+    checkin_retry_interval: Number($("settingsContent").querySelector('[data-field="schedule_checkin_retry_interval"]')?.value || 5),
   };
 
   const button = $("settingsSave");

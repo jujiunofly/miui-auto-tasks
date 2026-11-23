@@ -1,24 +1,30 @@
-"""米游社社区签到与云原神/云崩铁签到。
+"""米游社游戏签到与云游戏签到。
 
-逻辑参考 GildedFlames/MYS_Game_Singin，改写为 Python，避免额外引入 Node 依赖。
+游戏签到部分对齐 Womsxd/MihoyoBBSTools 已验证的 2.117.0 Web 接口。
 """
 
 import hashlib
 import random
 import string
 import time
-import uuid
 from typing import Optional
 
 from ..config import ConfigManager
+from ..captcha_solver import is_configured as captcha_configured
+from ..captcha_solver import solve_geetest
 from ..logger import log
 from ..report import MihoyoAccountReport, TaskResult
 from ..request import get, post
-from .miyoubi import run_miyoubi
+from .miyoubi import refresh_account_cookie, run_miyoubi
 
 MYS_HOST = "api-takumi.mihoyo.com"
-MYS_APP_VERSION = "2.81.1"
-MYS_DS_SALT = "yUZ3s0Sna1IrSNfk29Vo6vRapdOyqyhB"
+MYS_APP_VERSION = "2.117.0"
+MYS_DS_SALT = "4751cb5557bfad5e249e58462c39fb0a"
+MYS_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 12; Unspecified Device) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    f"Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36 miHoYoBBS/{MYS_APP_VERSION}"
+)
 
 MYS_GAMES = {
     "Genshin": {
@@ -33,7 +39,7 @@ MYS_GAMES = {
         "biz": "hkrpg_cn",
         "act_id": "e202304121516551",
         "region": "prod_gf_cn",
-        "signgame": "hkrpg",
+        "signgame": "",
     },
 }
 
@@ -70,56 +76,34 @@ CLOUD_GAMES = {
 
 
 def _ds() -> str:
-    """生成米游社 DS 签名。"""
-    timestamp = int(time.time())
-    nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    """生成米游社 Web 签到 DS 签名。"""
+    timestamp = str(int(time.time()))
+    nonce = "".join(
+        random.sample(string.ascii_lowercase + string.digits, 6)
+    )
     raw = f"salt={MYS_DS_SALT}&t={timestamp}&r={nonce}"
     return f"{timestamp},{nonce},{hashlib.md5(raw.encode('utf-8')).hexdigest()}"
 
 
-def _mys_headers(cookie: str, extra: Optional[dict] = None) -> dict:
+def _web_headers(cookie: str, signgame: str = "") -> dict:
     headers = {
-        "DS": _ds(),
-        "Cookie": cookie,
-        "Host": MYS_HOST,
-        "User-Agent": (
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-            f"miHoYoBBS/{MYS_APP_VERSION}"
-        ),
-        "x-rpc-app_version": MYS_APP_VERSION,
-        "x-rpc-client_type": 5,
-        "Accept-Language": "zh-CN,zh-Hans;q=0.9",
         "Accept": "application/json, text/plain, */*",
-    }
-    if extra:
-        headers.update(extra)
-    return {key: str(value) for key, value in headers.items()}
-
-
-def _role_headers() -> dict:
-    return {
-        "Referer": "https://webstatic.mihoyo.com/",
-        "x-rpc-device_id": str(uuid.uuid4()),
-        "Origin": "https://webstatic.mihoyo.com",
-        "x-rpc-challenge": "null",
-        "Accept-Encoding": "gzip, deflate, br",
-    }
-
-
-def _sign_headers(signgame: str) -> dict:
-    return {
+        "DS": _ds(),
+        "x-rpc-channel": "miyousheluodi",
+        "x-rpc-app_version": MYS_APP_VERSION,
+        "User-Agent": MYS_USER_AGENT,
+        "x-rpc-client_type": "5",
         "Referer": "https://act.mihoyo.com/",
-        "x-rpc-device_model": "iPhone14,4",
-        "x-rpc-device_id": str(uuid.uuid4()),
-        "x-rpc-platform": 1,
-        "x-rpc-device_name": "iPhone",
-        "Origin": "https://act.mihoyo.com",
-        "Sec-Fetch-Site": "same-site",
-        "Connection": "keep-alive",
-        "Content-Type": "application/json;charset=utf-8",
-        "x-rpc-signgame": signgame,
+        "Accept-Encoding": "gzip, deflate",
+        "Accept-Language": "zh-CN,en-US;q=0.8",
+        "X-Requested-With": "com.mihoyo.hyperion",
+        "Cookie": cookie,
+        "x-rpc-device_id": "",
     }
+    if signgame:
+        headers["x-rpc-signgame"] = signgame
+    headers["Origin"] = "https://act.mihoyo.com"
+    return {key: str(value) for key, value in headers.items()}
 
 
 def _cloud_headers(game: dict, token: str) -> dict:
@@ -162,60 +146,166 @@ def _message(payload: dict) -> str:
     return str(payload.get("message") or payload.get("msg") or "")
 
 
-def _get_role(cookie: str, game_key: str) -> Optional[dict]:
+def _get_roles(account, game_key: str, retry: bool = True) -> list[dict]:
     game = MYS_GAMES[game_key]
     try:
         response = get(
             f"https://{MYS_HOST}/binding/api/getUserGameRolesByCookie",
             params={"game_biz": game["biz"]},
-            headers=_mys_headers(cookie, _role_headers()),
+            headers=_web_headers(account.cookie, game["signgame"]),
             timeout=20,
         )
         payload = response.json()
         log.debug(f"[{game['label']}] 角色接口: {response.text}")
     except Exception:  # pylint: disable=broad-exception-caught
         log.exception(f"[{game['label']}] 获取角色异常")
-        return None
+        return []
 
+    if payload.get("retcode") == -100 and retry:
+        try:
+            refresh_account_cookie(account)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            log.error(f"[{game['label']}] Cookie 刷新失败: {exc}")
+            return []
+        return _get_roles(account, game_key, retry=False)
     if payload.get("retcode") != 0:
-        log.error(f"[{game['label']}] Cookie 无效或获取角色失败: {_message(payload)}")
-        return None
+        log.error(
+            f"[{game['label']}] Cookie 无效或获取角色失败: {_message(payload)}"
+        )
+        return []
     roles = (payload.get("data") or {}).get("list") or []
     if not roles:
         log.error(f"[{game['label']}] Cookie 下没有找到角色")
-        return None
-    role = roles[0]
-    log.info(
-        f"[{game['label']}] 角色: {role.get('nickname', '')}"
-        f"({role.get('game_uid', '')})"
-    )
-    return role
+    return roles
 
 
-def _sign_community(cookie: str, game_key: str, role: dict) -> tuple[bool, str]:
+def _get_rewards(account, game_key: str) -> list:
     game = MYS_GAMES[game_key]
-    data = {
-        "act_id": game["act_id"],
-        "region": game["region"],
-        "uid": role.get("game_uid", ""),
-        "lang": "zh-cn",
-    }
     try:
-        response = post(
-            f"https://{MYS_HOST}/event/luna/{game['signgame']}/sign",
-            headers=_mys_headers(cookie, _sign_headers(game["signgame"])),
-            json=data,
+        response = get(
+            f"https://{MYS_HOST}/event/luna/home",
+            params={"lang": "zh-cn", "act_id": game["act_id"]},
+            headers=_web_headers(account.cookie, game["signgame"]),
             timeout=20,
         )
         payload = response.json()
-        log.debug(f"[{game['label']}] 签到接口: {response.text}")
+        if payload.get("retcode") == 0:
+            return (payload.get("data") or {}).get("awards") or []
+        log.warning(f"[{game['label']}] 获取签到奖励失败: {_message(payload)}")
     except Exception:  # pylint: disable=broad-exception-caught
-        log.exception(f"[{game['label']}] 签到异常")
-        return False, "签到请求异常"
+        log.warning(f"[{game['label']}] 获取签到奖励异常")
+    return []
 
-    message = _message(payload)
-    success = payload.get("retcode") == 0 or "已签到" in message or "already" in message.lower()
-    return success, message or ("签到成功" if success else "签到失败")
+
+def _checkin_info(
+    account, game_key: str, role: dict, retry: bool = True
+) -> dict:
+    game = MYS_GAMES[game_key]
+    response = get(
+        f"https://{MYS_HOST}/event/luna/info",
+        params={
+            "lang": "zh-cn",
+            "act_id": game["act_id"],
+            "region": role.get("region") or game["region"],
+            "uid": role.get("game_uid", ""),
+        },
+        headers=_web_headers(account.cookie, game["signgame"]),
+        timeout=20,
+    )
+    payload = response.json()
+    log.debug(f"[{game['label']}] 签到信息: {response.text}")
+    if payload.get("retcode") == -100 and retry:
+        refresh_account_cookie(account)
+        return _checkin_info(account, game_key, role, retry=False)
+    if payload.get("retcode") != 0:
+        raise RuntimeError(_message(payload) or "获取签到状态失败")
+    return payload.get("data") or {}
+
+
+def _solve_game_captcha(
+    account, game_key: str, gt: str, challenge: str
+) -> Optional[dict]:
+    if not captcha_configured():
+        log.warning("游戏签到触发验证码，但未配置自动打码")
+        return None
+    game = MYS_GAMES[game_key]
+    solution = solve_geetest(
+        "https://act.mihoyo.com/",
+        str(gt),
+        str(challenge),
+        user_agent=MYS_USER_AGENT,
+    )
+    if not solution:
+        log.error(f"[{game['label']}] 自动打码失败")
+        return None
+    return solution
+
+
+def _sign_game(account, game_key: str, role: dict) -> tuple[bool, str]:
+    game = MYS_GAMES[game_key]
+    region = role.get("region") or game["region"]
+    uid = role.get("game_uid", "")
+    body = {"act_id": game["act_id"], "region": region, "uid": uid}
+    captcha_try = False
+    captcha_headers = {}
+    for attempt in range(3):
+        headers = _web_headers(account.cookie, game["signgame"])
+        headers.update(captcha_headers)
+        try:
+            response = post(
+                f"https://{MYS_HOST}/event/luna/sign",
+                headers=headers,
+                json=body,
+                timeout=20,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            log.exception(f"[{game['label']}] 签到异常")
+            return False, "签到请求异常"
+        if response.status_code == 429:
+            log.warning(f"[{game['label']}] 429 请求过多，10 秒后重试")
+            time.sleep(10)
+            continue
+        try:
+            payload = response.json()
+        except Exception:  # pylint: disable=broad-exception-caught
+            return False, "签到返回格式异常"
+        log.debug(f"[{game['label']}] 签到接口: {response.text}")
+        retcode = payload.get("retcode")
+        data = payload.get("data") or {}
+        if retcode == 0 and data.get("success") == 0:
+            return True, "签到成功"
+        if retcode == -5003 or "已签到" in _message(payload):
+            return True, "今日已签到"
+        if retcode == -100:
+            try:
+                refresh_account_cookie(account)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                return False, f"Cookie 已过期且刷新失败: {exc}"
+            continue
+        if (
+            retcode == 0
+            and data.get("success") != 0
+            and data.get("gt")
+            and data.get("challenge")
+            and not captcha_try
+        ):
+            solution = _solve_game_captcha(
+                account,
+                game_key,
+                data["gt"],
+                data["challenge"],
+            )
+            if solution:
+                captcha_headers = {
+                    "x-rpc-challenge": solution["challenge"],
+                    "x-rpc-validate": solution["validate"],
+                    "x-rpc-seccode": solution["seccode"],
+                }
+                captcha_try = True
+                time.sleep(random.uniform(6, 15))
+                continue
+        return False, _message(payload) or f"签到失败 (code {retcode})"
+    return False, "签到重试次数已用完"
 
 
 def _run_community(account, game_key: str, report: MihoyoAccountReport):
@@ -225,12 +315,47 @@ def _run_community(account, game_key: str, report: MihoyoAccountReport):
         log.warning(f"[{label}] 未配置米游社 Cookie，跳过")
         report.executed.append(TaskResult(name=label, success=False, message="未配置 Cookie"))
         return
-    role = _get_role(account.cookie, game_key)
-    if not role:
-        report.executed.append(TaskResult(name=label, success=False, message="Cookie 无效或未找到角色"))
+    roles = _get_roles(account, game_key)
+    if not roles:
+        report.executed.append(
+            TaskResult(name=label, success=False, message="Cookie 无效或未找到角色")
+        )
         return
-    success, message = _sign_community(account.cookie, game_key, role)
-    detail = f"{role.get('nickname', '')}({role.get('game_uid', '')}) {message}".strip()
+
+    rewards = _get_rewards(account, game_key)
+    details = []
+    failures = []
+    for index, role in enumerate(roles):
+        nickname = role.get("nickname") or "角色"
+        try:
+            info = _checkin_info(account, game_key, role)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            failures.append(f"{nickname} 获取签到状态失败: {exc}")
+            continue
+        if info.get("first_bind"):
+            failures.append(f"{nickname} 首次绑定，请手动签到一次")
+            continue
+        if info.get("is_sign"):
+            days = info.get("total_sign_day")
+            details.append(f"{nickname} 今日已签到" + (f"（{days} 天）" if days else ""))
+            continue
+        success, message = _sign_game(account, game_key, role)
+        if not success:
+            failures.append(f"{nickname} {message}")
+            continue
+        reward = ""
+        if rewards:
+            sign_days = int(info.get("total_sign_day") or 0)
+            reward_index = min(sign_days, len(rewards) - 1)
+            item = rewards[reward_index] or {}
+            if item.get("name"):
+                reward = f"，获得「{item.get('name')}」x{item.get('cnt', 1)}"
+        details.append(f"{nickname} {message}{reward}")
+        if index < len(roles) - 1:
+            time.sleep(random.uniform(2, 8))
+
+    success = not failures
+    detail = "；".join(details + failures) if details or failures else "没有可签到的角色"
     report.executed.append(TaskResult(name=label, success=success, message=detail))
     if success:
         log.success(f"[{label}] {detail}")

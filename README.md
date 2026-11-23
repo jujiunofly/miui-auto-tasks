@@ -94,20 +94,22 @@ playwright install chromium
 ### **米游社 / 云游戏**：
 在面板“设置 -> 米游社 / 云游戏账号”里添加账号，支持：
 
-- 米游社原神、米游社崩铁社区签到
+- 米游社原神、米游社崩铁游戏签到（含多角色、首次绑定提示、429/验证码重试）
 - 云原神、云崩铁 Token 领取
-- 米游币任务（大别野打卡、浏览、点赞、分享）
+- 米游币任务（大别野 + 原神分区签到、浏览、点赞、分享，Cookie 失效自动用 stoken 刷新）
 
 获取方式：
 
 - 米游社 Cookie：登录 `bbs.mihoyo.com`，在浏览器控制台复制 `document.cookie`；原神/崩铁通用。
 - 云游戏 Token：登录云原神或云崩铁，在开发者工具 Network 中复制请求头 `x-rpc-combo_token`；两个游戏不通用。
-- 米游币 stoken：使用 `MihoyoBBSTools` / `Miyoushe-Auto` 的扫码工具获取 `stoken`；面板只需填 **米游社 Cookie + stoken**，uid/mid 会自动从 Cookie 中提取。
+- 米游币 stoken：使用 `MihoyoBBSTools` / `Miyoushe-Auto` 的扫码工具获取 `stoken`；面板只需填 **米游社 Cookie + stoken**，uid/mid 会自动从 Cookie 中提取。请求流程与 `MihoyoBBSTools` 最新版（V2 Cookie、2.117.0 签名盐）一致。
 
 添加后勾选需要执行的任务，点“立即运行”或使用每日定时；运行结果会写入面板日志和 Telegram 汇总。
 
 ### **每日定时运行**：
 面板“设置 -> 验证码与定时运行”里可以开启每日定时，并设置开始/结束时间（Asia/Shanghai 时区）。服务器每天会在该范围内随机选择一个时间自动运行一次；即使不打开面板也会执行，重启不会重复跑当天。
+
+同一设置里可以配置“每日签到最多尝试”和“重试间隔”。每日签到失败后会等待 5、10、15 分钟依次递增重试，其他任务不重复执行。定时运行和“立即运行”使用同一套任务逻辑。
 
 首次构建会下载基础镜像、Playwright 和 Chromium，可能持续几分钟，镜像也会变大。`docker compose up -d` 默认不显示构建进度，建议先单独构建：
 
