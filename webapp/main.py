@@ -216,6 +216,8 @@ def _settings_payload():
             "enabled": bool(_conf.SCHEDULE.enabled),
             "start_time": _conf.SCHEDULE.start_time,
             "end_time": _conf.SCHEDULE.end_time,
+            "checkin_retry_max": _conf.SCHEDULE.checkin_retry_max,
+            "checkin_retry_interval": _conf.SCHEDULE.checkin_retry_interval,
         },
     }
 
@@ -461,6 +463,22 @@ def update_settings():
             _conf.SCHEDULE.start_time = start_time
         if end_time:
             _conf.SCHEDULE.end_time = end_time
+        if schedule.get("checkin_retry_max") is not None:
+            try:
+                retry_max = int(schedule["checkin_retry_max"])
+            except (TypeError, ValueError):
+                return jsonify({"detail": "签到重试次数应为数字"}), 400
+            if not 1 <= retry_max <= 10:
+                return jsonify({"detail": "签到重试次数应为 1-10"}), 400
+            _conf.SCHEDULE.checkin_retry_max = retry_max
+        if schedule.get("checkin_retry_interval") is not None:
+            try:
+                retry_interval = int(schedule["checkin_retry_interval"])
+            except (TypeError, ValueError):
+                return jsonify({"detail": "签到重试间隔应为数字"}), 400
+            if not 1 <= retry_interval <= 60:
+                return jsonify({"detail": "签到重试间隔应为 1-60 分钟"}), 400
+            _conf.SCHEDULE.checkin_retry_interval = retry_interval
 
     if onepush:
         params = _conf.ONEPUSH.params or {}

@@ -230,6 +230,8 @@ class Schedule:
         start_time="09:00",
         end_time="11:00",
         time="",
+        checkin_retry_max=3,
+        checkin_retry_interval=5,
     ):
         if time and start_time == "09:00" and end_time == "11:00":
             start_time = time
@@ -238,6 +240,18 @@ class Schedule:
         self.start_time = start_time
         self.end_time = end_time
         """Asia/Shanghai 时区的 HH:MM 范围，每天在范围内随机运行一次"""
+        try:
+            self.checkin_retry_max = max(1, min(10, int(checkin_retry_max)))
+        except (TypeError, ValueError):
+            self.checkin_retry_max = 3
+        """每日签到最多尝试次数（含第一次）"""
+        try:
+            self.checkin_retry_interval = max(
+                1, min(60, int(checkin_retry_interval))
+            )
+        except (TypeError, ValueError):
+            self.checkin_retry_interval = 5
+        """每日签到失败后的基础等待分钟数，后续按倍数递增"""
 
 
 class MihoyoAccount:
